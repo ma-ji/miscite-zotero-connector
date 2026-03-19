@@ -158,16 +158,16 @@ export class MisciteApiClient {
     return this.request("GET", `/items/${itemId}/files`);
   }
 
-  async downloadFile(fileId: number): Promise<string> {
+  async downloadFile(fileId: number): Promise<Uint8Array> {
     const url = `${this.baseUrl}/api/v1/sync/files/${fileId}/download`;
     const response = await Zotero.HTTP.request("GET", url, {
       headers: { Authorization: `Bearer ${this.token}` },
-      responseType: "text",
+      responseType: "arraybuffer",
     });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`File download failed: ${response.status}`);
     }
-    return response.responseText;
+    return new Uint8Array(response.response as ArrayBuffer);
   }
 
   async deleteFile(fileId: number): Promise<{ ok: boolean }> {

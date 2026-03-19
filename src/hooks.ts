@@ -68,7 +68,7 @@ export function onShutdown(): void {
   }
   const timer = Zotero.MisciteConnector?.data.syncTimer;
   if (timer) {
-    globalThis.clearInterval(timer);
+    Zotero.getMainWindow()!.clearInterval(timer);
     Zotero.MisciteConnector.data.syncTimer = null;
   }
   syncEngine = null;
@@ -81,7 +81,9 @@ function _setupAutoSync(): void {
 
   if (!enabled) return;
 
-  const timer = globalThis.setInterval(
+  const win = Zotero.getMainWindow();
+  if (!win) return;
+  const timer = win.setInterval(
     () => {
       _triggerSync();
     },

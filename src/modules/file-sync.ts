@@ -26,7 +26,7 @@ export async function pullFiles(
   for (const attId of attachmentIDs) {
     const att = Zotero.Items.get(attId);
     if (att) {
-      const hash: string = att.attachmentHash || "";
+      const hash = String(att.attachmentHash || "");
       if (hash) existingHashes.add(hash);
     }
   }
@@ -102,19 +102,14 @@ export async function pushFiles(
 }
 
 async function _importAttachment(
-  data: string,
+  data: Uint8Array,
   fileInfo: MisciteFile,
   parentItem: Zotero.Item,
   libraryID: number,
 ): Promise<Zotero.Item | null> {
-  // Write data to a temp file
   const tmpDir = Zotero.getTempDirectory();
   const tmpFile = PathUtils.join(tmpDir.path, fileInfo.filename);
-
-  // Convert string to Uint8Array for writing
-  const encoder = new TextEncoder();
-  const uint8 = encoder.encode(data);
-  await IOUtils.write(tmpFile, uint8);
+  await IOUtils.write(tmpFile, data);
 
   try {
     const attachment = await Zotero.Attachments.importFromFile({

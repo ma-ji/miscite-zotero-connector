@@ -94,9 +94,8 @@ export function zoteroCollectionToPath(collection: Zotero.Collection): string {
     segments.unshift(current.name);
     if (current.parentKey) {
       const pKey = current.parentKey;
-      const found = Zotero.Collections.getByLibrary(current.libraryID).find(
-        (c: Zotero.Collection) => c.key === pKey,
-      );
+      const allCols: Zotero.Collection[] = Zotero.Collections.getByLibrary(current.libraryID);
+      const found = allCols.find((c) => c.key === pKey);
       current = found || null;
     } else {
       current = null;
