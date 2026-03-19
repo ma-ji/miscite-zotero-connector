@@ -17,6 +17,13 @@ async function onStartup() {
 
   initLocale();
 
+  // Register preferences pane in Zotero Settings
+  Zotero.PreferencePanes.register({
+    pluginID: config.addonID,
+    src: rootURI + "content/preferences.xhtml",
+    label: getString("prefs-title"),
+  });
+
   syncEngine = new SyncEngine();
 
   // Register notifier to track deletions
