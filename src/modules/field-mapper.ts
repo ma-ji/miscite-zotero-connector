@@ -1,5 +1,6 @@
 /**
- * Bidirectional field mapping between miscite items and Zotero items.
+ * Bidirectional field mapping between miscite items and
+ * Zotero items.
  */
 import type { MisciteItem } from "./miscite-api";
 
@@ -65,11 +66,13 @@ function buildExtraLines(item: MisciteItem): string[] {
 
   if (item.cited_by_count != null) {
     lines.push(
-      `${item.cited_by_count} citations (OpenAlex/DOI) [${dateStr}]`,
+      `${item.cited_by_count} citations` + ` (OpenAlex/DOI) [${dateStr}]`,
     );
   }
   if (item.fwci != null) {
-    lines.push(`FWCI: ${item.fwci.toFixed(2)} (OpenAlex/DOI) [${dateStr}]`);
+    lines.push(
+      `FWCI: ${item.fwci.toFixed(2)}` + ` (OpenAlex/DOI) [${dateStr}]`,
+    );
   }
   return lines;
 }
@@ -106,7 +109,8 @@ function parseExtraMetrics(extra: string): {
 }
 
 /**
- * Convert a miscite item to Zotero item data for creation/update.
+ * Convert a miscite item to Zotero item data for
+ * creation/update.
  */
 export function misciteToZoteroData(
   item: MisciteItem,
@@ -158,7 +162,8 @@ export function misciteToZoteroData(
 }
 
 /**
- * Convert a Zotero item to miscite API fields for creation/update.
+ * Convert a Zotero item to miscite API fields for
+ * creation/update.
  */
 export function zoteroToMisciteData(
   zoteroItem: Zotero.Item,

@@ -1,14 +1,16 @@
 /**
- * Maps between miscite path-based collection names and Zotero nested collections.
+ * Maps between miscite path-based collection names
+ * and Zotero nested collections.
  * Miscite uses "Parent / Child / Grandchild" paths.
- * Zotero uses nested collection objects with parentCollection references.
+ * Zotero uses nested collection objects with parentCollection
+ * references.
  */
 
 const PATH_SEPARATOR = " / ";
 
 /**
- * Find or create a Zotero collection matching a miscite path in the group library.
- * Returns the leaf collection ID.
+ * Find or create a Zotero collection matching a miscite path
+ * in the group library. Returns the leaf collection ID.
  */
 export async function ensureZoteroCollection(
   libraryID: number,
@@ -84,7 +86,8 @@ function _findCollection(
 }
 
 /**
- * Build a miscite path string from a Zotero collection by walking up the parent chain.
+ * Build a miscite path string from a Zotero collection
+ * by walking up the parent chain.
  */
 export function zoteroCollectionToPath(collection: Zotero.Collection): string {
   const segments: string[] = [];
@@ -95,8 +98,11 @@ export function zoteroCollectionToPath(collection: Zotero.Collection): string {
     if (current.parentKey) {
       const pKey: string = current.parentKey;
       const libID: number = current.libraryID;
-      const allCols: Zotero.Collection[] = Zotero.Collections.getByLibrary(libID);
-      const found: Zotero.Collection | undefined = allCols.find((c) => c.key === pKey);
+      const allCols: Zotero.Collection[] =
+        Zotero.Collections.getByLibrary(libID);
+      const found: Zotero.Collection | undefined = allCols.find(
+        (c) => c.key === pKey,
+      );
       current = found ?? null;
     } else {
       current = null;

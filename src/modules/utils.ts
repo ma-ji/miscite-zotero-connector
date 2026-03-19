@@ -6,5 +6,6 @@ export function log(...args: unknown[]): void {
 }
 
 export function logError(...args: unknown[]): void {
-  Zotero.logError(new Error(`[${addon.data.config.addonName}] ${args.map(String).join(" ")}`));
+  const msg = `[${addon.data.config.addonName}] ${args.map(String).join(" ")}`;
+  Zotero.logError(new Error(msg));
 }

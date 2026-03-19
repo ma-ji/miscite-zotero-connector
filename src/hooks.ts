@@ -28,17 +28,18 @@ async function onStartup() {
         ids: (string | number)[],
         _extraData: Record<string, unknown>,
       ) {
-        if (
-          event === "delete" &&
-          (type === "item" || type === "collection")
-        ) {
+        if (event === "delete" && (type === "item" || type === "collection")) {
           const groupLibraryId = getPref("groupLibraryId") as number;
           if (!groupLibraryId) return;
           const deleteQueue = JSON.parse(
             (getPref("deleteQueue") as string) || "[]",
           );
           for (const id of ids) {
-            deleteQueue.push({ type, id: String(id), ts: Date.now() });
+            deleteQueue.push({
+              type,
+              id: String(id),
+              ts: Date.now(),
+            });
           }
           setPref("deleteQueue", JSON.stringify(deleteQueue));
         }
@@ -57,14 +58,10 @@ async function onStartup() {
   addon.data.initialized = true;
 }
 
-async function onMainWindowLoad(
-  win: _ZoteroTypes.MainWindow,
-): Promise<void> {
+async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   addon.data.ztoolkit = createZToolkit();
 
-  win.MozXULElement.insertFTLIfNeeded(
-    `${config.addonRef}-addon.ftl`,
-  );
+  win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-addon.ftl`);
 
   // Add sync toolbar button
   const doc = win.document;
@@ -140,12 +137,13 @@ async function _triggerSync(): Promise<void> {
     ztoolkit.log("Starting sync...");
     const result = await syncEngine.sync();
     ztoolkit.log(
-      `Sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted`,
+      `Sync complete: ${result.created} created, ` +
+        `${result.updated} updated, ` +
+        `${result.deleted} deleted`,
     );
-    const progressWin = new ztoolkit.ProgressWindow(
-      config.addonName,
-      { closeOnClick: true },
-    );
+    const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
+      closeOnClick: true,
+    });
     progressWin
       .createLine({
         text: getString("sync-complete", {
@@ -161,13 +159,14 @@ async function _triggerSync(): Promise<void> {
     progressWin.startCloseTimer(4000);
   } catch (err) {
     Zotero.logError(err instanceof Error ? err : new Error(String(err)));
-    const progressWin = new ztoolkit.ProgressWindow(
-      config.addonName,
-      { closeOnClick: true },
-    );
+    const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
+      closeOnClick: true,
+    });
     progressWin
       .createLine({
-        text: getString("sync-failed", { args: { error: String(err) } }),
+        text: getString("sync-failed", {
+          args: { error: String(err) },
+        }),
         type: "default",
       })
       .show();

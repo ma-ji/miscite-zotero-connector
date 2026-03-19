@@ -7,7 +7,8 @@ import { log } from "./utils";
 
 /**
  * Sync files from miscite to Zotero for a given item.
- * Downloads missing files and attaches them to the Zotero parent item.
+ * Downloads missing files and attaches them to the Zotero
+ * parent item.
  */
 export async function pullFiles(
   api: MisciteApiClient,
@@ -52,7 +53,7 @@ export async function pullFiles(
       if (attachment) {
         fileKeyMap[mapKey] = attachment.key;
         downloaded++;
-        log(`Downloaded file: ${rf.filename} -> ${attachment.key}`);
+        log(`Downloaded file: ${rf.filename}` + ` -> ${attachment.key}`);
       }
     } catch (err) {
       log(`Failed to download file ${rf.id}: ${err}`);
@@ -91,12 +92,15 @@ export async function pushFiles(
 
       // Read the file content
       const fileData = await IOUtils.read(filePath);
-      const filename =
-        PathUtils.filename(filePath) || `attachment_${att.key}`;
+      const filename = PathUtils.filename(filePath) || `attachment_${att.key}`;
       const contentType =
         att.attachmentContentType || "application/octet-stream";
 
-      log(`Uploading attachment ${att.key} (${filename}) to miscite item ${misciteItemId}`);
+      log(
+        `Uploading attachment ${att.key}` +
+          ` (${filename})` +
+          ` to miscite item ${misciteItemId}`,
+      );
       const response = await api.uploadFile(
         misciteItemId,
         filename,
@@ -107,7 +111,9 @@ export async function pushFiles(
       if (response.data) {
         fileKeyMap[`m${response.data.id}`] = att.key;
         uploaded++;
-        log(`Uploaded file: ${filename} -> miscite file ${response.data.id}`);
+        log(
+          `Uploaded file: ${filename}` + ` -> miscite file ${response.data.id}`,
+        );
       }
     } catch (err) {
       log(`Failed to push file ${att.key}: ${err}`);

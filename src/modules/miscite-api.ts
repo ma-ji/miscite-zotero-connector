@@ -54,10 +54,7 @@ export class MisciteApiClient {
   private token: string;
 
   constructor() {
-    this.baseUrl = ((getPref("serverUrl") as string) || "").replace(
-      /\/+$/,
-      "",
-    );
+    this.baseUrl = ((getPref("serverUrl") as string) || "").replace(/\/+$/, "");
     this.token = (getPref("apiToken") as string) || "";
   }
 
@@ -79,18 +76,23 @@ export class MisciteApiClient {
     const response = await Zotero.HTTP.request(method, url, {
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      responseType: (options?.responseType as XMLHttpRequestResponseType) || "json",
+      responseType: (options?.responseType ??
+        "json") as XMLHttpRequestResponseType,
     });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(
-        `miscite API error ${response.status}: ${String(response.responseText || "").slice(0, 200)}`,
+        `miscite API error ${response.status}: ` +
+          String(response.responseText || "").slice(0, 200),
       );
     }
     return response.response as T;
   }
 
-  async testConnection(): Promise<{ user_id: string; email: string }> {
+  async testConnection(): Promise<{
+    user_id: string;
+    email: string;
+  }> {
     return this.request("GET", "/me");
   }
 
@@ -137,7 +139,10 @@ export class MisciteApiClient {
     name: string,
     description?: string,
   ): Promise<ApiEnvelope<MisciteCollection>> {
-    return this.request("POST", "/collections", { name, description });
+    return this.request("POST", "/collections", {
+      name,
+      description,
+    });
   }
 
   async updateCollection(
@@ -160,16 +165,16 @@ export class MisciteApiClient {
     });
   }
 
-  async listItemFiles(
-    itemId: number,
-  ): Promise<ApiEnvelope<MisciteFile[]>> {
+  async listItemFiles(itemId: number): Promise<ApiEnvelope<MisciteFile[]>> {
     return this.request("GET", `/items/${itemId}/files`);
   }
 
   async downloadFile(fileId: number): Promise<Uint8Array> {
-    const url = `${this.baseUrl}/api/v1/sync/files/${fileId}/download`;
+    const url = `${this.baseUrl}/api/v1/sync` + `/files/${fileId}/download`;
     const response = await Zotero.HTTP.request("GET", url, {
-      headers: { Authorization: `Bearer ${this.token}` },
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+      },
       responseType: "arraybuffer",
     });
     if (response.status < 200 || response.status >= 300) {
@@ -184,14 +189,15 @@ export class MisciteApiClient {
     contentType: string,
     data: Uint8Array,
   ): Promise<ApiEnvelope<MisciteFile>> {
-    const url = `${this.baseUrl}/api/v1/sync/items/${itemId}/files`;
+    const url = `${this.baseUrl}/api/v1/sync` + `/items/${itemId}/files`;
 
-    // Build multipart form data manually since FormData is not available
-    // in the Zotero sandbox environment
+    // Build multipart form data manually since FormData
+    // is not available in the Zotero sandbox environment
     const boundary = `----MisciteBoundary${Date.now()}`;
     const header =
       `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Disposition: form-data; ` +
+      `name="file"; filename="${filename}"\r\n` +
       `Content-Type: ${contentType}\r\n\r\n`;
     const footer = `\r\n--${boundary}--\r\n`;
 
@@ -215,7 +221,8 @@ export class MisciteApiClient {
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(
-        `File upload failed: ${response.status} ${String(response.responseText || "").slice(0, 200)}`,
+        `File upload failed: ${response.status} ` +
+          String(response.responseText || "").slice(0, 200),
       );
     }
     return response.response as ApiEnvelope<MisciteFile>;
