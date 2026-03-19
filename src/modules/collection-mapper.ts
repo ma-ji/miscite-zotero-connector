@@ -93,10 +93,11 @@ export function zoteroCollectionToPath(collection: Zotero.Collection): string {
   while (current) {
     segments.unshift(current.name);
     if (current.parentKey) {
-      const pKey = current.parentKey;
-      const allCols: Zotero.Collection[] = Zotero.Collections.getByLibrary(current.libraryID);
-      const found = allCols.find((c) => c.key === pKey);
-      current = found || null;
+      const pKey: string = current.parentKey;
+      const libID: number = current.libraryID;
+      const allCols: Zotero.Collection[] = Zotero.Collections.getByLibrary(libID);
+      const found: Zotero.Collection | undefined = allCols.find((c) => c.key === pKey);
+      current = found ?? null;
     } else {
       current = null;
     }
