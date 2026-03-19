@@ -27,7 +27,16 @@ export interface SyncResult {
 }
 
 export class SyncEngine {
+  // Per-sync-cycle caches (cleared at start of each sync)
+  private _managedColIds: Set<number> | null = null;
+  private _unfiledColId: number | null = null;
+  private _reverseColMap: Map<number, string> | null = null;
+
   async sync(): Promise<SyncResult> {
+    // Reset per-cycle caches
+    this._managedColIds = null;
+    this._unfiledColId = null;
+    this._reverseColMap = null;
     const api = new MisciteApiClient();
 
     // Verify connection first
@@ -135,9 +144,9 @@ export class SyncEngine {
     name: string,
     parentKey: string | false,
   ): Promise<number> {
-    // Search for existing collection with this name under the parent
-    // (skip trashed collections)
     const collections = Zotero.Collections.getByLibrary(libraryID);
+
+    // 1. Exact match: same name + same parent
     for (const col of collections) {
       if (
         col.name === name &&
@@ -148,7 +157,40 @@ export class SyncEngine {
       }
     }
 
-    // Create new collection under the parent
+    // 2. Fuzzy match: same name under a different "miscite.review" parent.
+    //    This handles the case where the root collection was deleted and
+    //    recreated (new key), leaving orphaned subcollections under the
+    //    old parent.  Re-parent instead of creating a duplicate.
+    if (parentKey) {
+      for (const col of collections) {
+        if (col.name !== name || (col as any).deleted || !col.parentKey) {
+          continue;
+        }
+        // Check whether the current parent is (or was) a miscite root
+        let isOrphan = false;
+        try {
+          const parent = Zotero.Collections.getByLibraryAndKey(
+            libraryID,
+            col.parentKey,
+          );
+          // Parent gone → orphan; parent is a miscite root → adopt
+          isOrphan = !parent || parent.name === "miscite.review";
+        } catch {
+          isOrphan = true;
+        }
+        if (isOrphan) {
+          log(
+            `Re-parenting orphaned collection "${name}" ` +
+              `from ${col.parentKey} to ${parentKey}`,
+          );
+          col.parentKey = parentKey;
+          await col.saveTx();
+          return col.id;
+        }
+      }
+    }
+
+    // 3. No match — create new collection under the parent
     const col = new Zotero.Collection();
     (col as unknown as Record<string, unknown>).libraryID = libraryID;
     col.name = name;
@@ -199,6 +241,10 @@ export class SyncEngine {
               libraryID,
               existingKey,
             );
+            if (zItem && zItem.deleted) {
+              log(`Skipping trashed item "${mi.title}" (${existingKey})`);
+              continue;
+            }
             if (zItem) {
               const serverDate = new Date(mi.updated_at);
               const zoteroDate = new Date(zItem.dateModified);
@@ -279,19 +325,29 @@ export class SyncEngine {
       }
     }
 
-    // Get items in the miscite root collection only
+    // Get items from root collection and all managed subcollections
     const rootColId = await getRootCollectionID();
     const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
     if (!rootCol) return { created, updated };
 
-    const itemIDs = rootCol.getChildItems(true);
-    const items = itemIDs
+    const allItemIDs = new Set<number>();
+    for (const id of rootCol.getChildItems(true)) allItemIDs.add(id);
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
+    for (const colId of Object.values(collectionKeyMap)) {
+      const sub = Zotero.Collections.get(colId as number);
+      if (sub) {
+        for (const id of sub.getChildItems(true)) allItemIDs.add(id);
+      }
+    }
+
+    const items = Array.from(allItemIDs)
       .map((id: number) => Zotero.Items.get(id))
       .filter(Boolean);
     const sinceDate = since ? new Date(since) : new Date(0);
 
     for (const zItem of items) {
       if (!zItem.isRegularItem()) continue;
+      if (zItem.deleted) continue; // skip trashed items
       // Skip items just pulled/linked from server in this sync cycle
       if (skipKeys?.has(zItem.key)) continue;
 
@@ -302,10 +358,12 @@ export class SyncEngine {
       const data = zoteroToMisciteData(zItem);
 
       try {
+        let targetMisciteId: number;
         if (misciteId) {
           // Update existing miscite item if Zotero is newer
           await api.updateItem(misciteId, data);
           updated++;
+          targetMisciteId = misciteId;
 
           // Push files
           await pushFiles(api, misciteId, zItem);
@@ -315,10 +373,15 @@ export class SyncEngine {
           const newItem = response.data;
           itemKeyMap[`m${newItem.id}`] = zItem.key;
           created++;
+          targetMisciteId = newItem.id;
 
           // Push files
           await pushFiles(api, newItem.id, zItem);
         }
+
+        // Push collection memberships
+        const misciteColIds = this._getItemMisciteCollectionIds(zItem);
+        await api.setItemCollections(targetMisciteId, misciteColIds);
       } catch (err) {
         log(`Failed to push item "${zItem.getField("title")}": ${err}`);
       }
@@ -523,24 +586,124 @@ export class SyncEngine {
     zoteroKey: string,
     libraryID: number,
   ): Promise<void> {
-    if (!mi.collection_ids || mi.collection_ids.length === 0) return;
-
     const zItem = Zotero.Items.getByLibraryAndKey(libraryID, zoteroKey);
     if (!zItem) return;
 
     const collectionKeyMap = getKeyMap("collectionKeyMap");
+    const managedIds = this._getManagedCollectionIds();
+    const rootColId = await getRootCollectionID();
 
-    for (const mcId of mi.collection_ids) {
-      const colZoteroId = collectionKeyMap[`m${mcId}`];
-      if (!colZoteroId) {
-        log(`No local collection mapped for miscite collection ${mcId}`);
-        continue;
+    // Build desired local collection IDs from server's collection_ids
+    const desiredColIds = new Set<number>();
+    if (mi.collection_ids && mi.collection_ids.length > 0) {
+      for (const mcId of mi.collection_ids) {
+        const colZoteroId = collectionKeyMap[`m${mcId}`];
+        if (!colZoteroId) {
+          log(`No local collection mapped for miscite collection ${mcId}`);
+          continue;
+        }
+        desiredColIds.add(colZoteroId as number);
       }
-      const col = Zotero.Collections.get(colZoteroId as number);
+    }
+
+    // Fallback: if no desired collections resolved, use Unfiled
+    if (desiredColIds.size === 0) {
+      const unfiledId = await this._getUnfiledCollectionId(libraryID);
+      if (unfiledId) desiredColIds.add(unfiledId);
+    }
+
+    // Current collections this item belongs to
+    const currentColIds: number[] = zItem.getCollections();
+
+    // Remove from managed collections that are NOT in the desired set
+    for (const colId of currentColIds) {
+      if (colId === rootColId) continue; // never touch root
+      if (!managedIds.has(colId)) continue; // not managed by miscite
+      if (desiredColIds.has(colId)) continue; // still desired
+      const col = Zotero.Collections.get(colId);
+      if (col) {
+        col.removeItem(zItem.id);
+        await col.saveTx();
+      }
+    }
+
+    // Add to desired collections the item is not already in
+    for (const colId of desiredColIds) {
+      const col = Zotero.Collections.get(colId);
       if (col && !col.hasItem(zItem.id)) {
         col.addItem(zItem.id);
         await col.saveTx();
       }
     }
+  }
+
+  /** Set of local Zotero collection IDs managed by miscite (cached per sync). */
+  private _getManagedCollectionIds(): Set<number> {
+    if (this._managedColIds) return this._managedColIds;
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
+    this._managedColIds = new Set(
+      Object.values(collectionKeyMap).map((v) => v as number),
+    );
+    return this._managedColIds;
+  }
+
+  /** Get the local Zotero ID of the "Unfiled" subcollection (cached per sync). */
+  private async _getUnfiledCollectionId(
+    libraryID: number,
+  ): Promise<number | null> {
+    if (this._unfiledColId !== null) return this._unfiledColId;
+
+    // Check collectionKeyMap for an entry whose collection is named "Unfiled"
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
+    for (const colId of Object.values(collectionKeyMap)) {
+      const col = Zotero.Collections.get(colId as number);
+      if (col && col.name === "Unfiled") {
+        this._unfiledColId = col.id;
+        return this._unfiledColId;
+      }
+    }
+
+    // Not mapped yet — try to create/find via _ensureChildCollection
+    const rootColId = await getRootCollectionID();
+    const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
+    if (rootCol) {
+      const parentKey = rootCol.key;
+      const id = await this._ensureChildCollection(
+        libraryID,
+        "Unfiled",
+        parentKey,
+      );
+      this._unfiledColId = id;
+      return id;
+    }
+
+    return null;
+  }
+
+  /**
+   * Build reverse collectionKeyMap: local Zotero collection ID → miscite map
+   * key (e.g. 1840 → "m24").  Cached per sync cycle.
+   */
+  private _getReverseCollectionMap(): Map<number, string> {
+    if (this._reverseColMap) return this._reverseColMap;
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
+    this._reverseColMap = new Map<number, string>();
+    for (const [mk, v] of Object.entries(collectionKeyMap)) {
+      this._reverseColMap.set(v as number, mk);
+    }
+    return this._reverseColMap;
+  }
+
+  /** Get miscite collection IDs for a Zotero item's current collection memberships. */
+  private _getItemMisciteCollectionIds(zItem: Zotero.Item): number[] {
+    const reverseMap = this._getReverseCollectionMap();
+    const result: number[] = [];
+    for (const colId of zItem.getCollections()) {
+      const mk = reverseMap.get(colId);
+      if (mk) {
+        result.push(parseInt(mk.slice(1), 10));
+      }
+    }
+    return result;
   }
 }

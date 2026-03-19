@@ -27,7 +27,7 @@ async function onStartup() {
 
   syncEngine = new SyncEngine();
 
-  // Register notifier to track deletions
+  // Register notifier to track deletions and trashing
   notifierID = Zotero.Notifier.registerObserver(
     {
       notify(
@@ -36,8 +36,12 @@ async function onStartup() {
         ids: (string | number)[],
         _extraData: Record<string, unknown>,
       ) {
-        if (event === "delete" && (type === "item" || type === "collection")) {
-          // For items: extraData contains {[id]: {key}} for deleted items.
+        if (
+          (event === "delete" || event === "trash") &&
+          (type === "item" || type === "collection")
+        ) {
+          // For delete: extraData contains {[id]: {key}} for deleted items.
+          // For trash: item still exists in DB, look up key directly.
           // For collections: Zotero passes numeric IDs which match our map values.
           const keyMap = JSON.parse(
             (getPref(
@@ -57,11 +61,22 @@ async function onStartup() {
           for (const id of ids) {
             let matchKey: string | undefined;
             if (type === "item") {
-              // Notifier gives numeric ID; extraData has the Zotero key
-              const extra = _extraData[String(id)] as
-                | { key?: string }
-                | undefined;
-              const zoteroKey = extra?.key;
+              let zoteroKey: string | undefined;
+              if (event === "delete") {
+                // Notifier gives numeric ID; extraData has the Zotero key
+                const extra = _extraData[String(id)] as
+                  | { key?: string }
+                  | undefined;
+                zoteroKey = extra?.key;
+              } else {
+                // Trash: item still exists, look up directly
+                try {
+                  const zItem = Zotero.Items.get(id as number);
+                  zoteroKey = zItem?.key;
+                } catch {
+                  // Item lookup failed
+                }
+              }
               if (zoteroKey) {
                 matchKey = reverseByValue[zoteroKey];
               }
