@@ -3,7 +3,7 @@
  */
 import { MisciteApiClient, type MisciteItem } from "./miscite-api";
 import { misciteToZoteroData, zoteroToMisciteData } from "./field-mapper";
-import { getGroupLibraryID, getRootCollectionID } from "./group-library";
+import { getLibraryID, getRootCollectionID } from "./library";
 import { pullFiles, pushFiles } from "./file-sync";
 import {
   getPref,
@@ -31,7 +31,7 @@ export class SyncEngine {
     const me = await api.testConnection();
     log(`Authenticated as: ${me.email}`);
 
-    const libraryID = await getGroupLibraryID();
+    const libraryID = await getLibraryID();
     log(`Using library ID: ${libraryID}`);
 
     const lastSync = (getPref("lastSyncTime") as string) || "";

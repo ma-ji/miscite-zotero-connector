@@ -88,27 +88,6 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   addon.data.ztoolkit = createZToolkit();
 
   win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-addon.ftl`);
-
-  // Add "Sync with miscite" under Tools menu
-  const doc = win.document;
-  const menuTools = doc.getElementById("menu_ToolsPopup");
-  if (menuTools) {
-    const separator = doc.createXULElement("menuseparator");
-    separator.id = "miscite-sync-separator";
-    menuTools.appendChild(separator);
-
-    const menuItem = doc.createXULElement("menuitem");
-    menuItem.id = "miscite-sync-menuitem";
-    menuItem.setAttribute("label", getString("sync-button-label"));
-    menuItem.addEventListener("command", () => _triggerSync());
-    menuTools.appendChild(menuItem);
-
-    const resetItem = doc.createXULElement("menuitem");
-    resetItem.id = "miscite-reset-sync-menuitem";
-    resetItem.setAttribute("label", getString("reset-sync-label"));
-    resetItem.addEventListener("command", () => _resetAndSync());
-    menuTools.appendChild(resetItem);
-  }
 }
 
 async function onMainWindowUnload(_win: Window): Promise<void> {
@@ -139,6 +118,12 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   switch (type) {
     case "load":
       registerPrefsScripts(data.window);
+      break;
+    case "sync":
+      await _triggerSync();
+      break;
+    case "fullSync":
+      await _resetAndSync();
       break;
     default:
       return;

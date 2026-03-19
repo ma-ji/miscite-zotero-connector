@@ -11,7 +11,7 @@ declare namespace _ZoteroTypes {
       "apiToken": string;
       "autoSyncInterval": number;
       "autoSyncEnabled": boolean;
-      "groupLibraryId": number;
+      "rootCollectionId": number;
       "lastSyncTime": string;
       "itemKeyMap": string;
       "collectionKeyMap": string;

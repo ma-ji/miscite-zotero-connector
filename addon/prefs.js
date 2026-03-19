@@ -2,7 +2,7 @@ pref("serverUrl", "https://miscite.review");
 pref("apiToken", "");
 pref("autoSyncInterval", 15);
 pref("autoSyncEnabled", false);
-pref("groupLibraryId", 0);
+pref("rootCollectionId", 0);
 pref("lastSyncTime", "");
 pref("itemKeyMap", "{}");
 pref("collectionKeyMap", "{}");

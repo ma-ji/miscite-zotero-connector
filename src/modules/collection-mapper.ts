@@ -10,7 +10,7 @@ const PATH_SEPARATOR = " / ";
 
 /**
  * Find or create a Zotero collection matching a miscite path
- * in the group library. Returns the leaf collection ID.
+ * in the library. Returns the leaf collection ID.
  */
 export async function ensureZoteroCollection(
   libraryID: number,

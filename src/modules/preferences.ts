@@ -2,8 +2,8 @@ import { MisciteApiClient } from "./miscite-api";
 import { getString } from "../utils/locale";
 import { config } from "../../package.json";
 
-export function registerPrefsScripts(win: Window): void {
-  const doc = win.document;
+export function registerPrefsScripts(_win: Window): void {
+  const doc = _win.document;
 
   // Wire up test connection button
   const testBtn = doc.getElementById(
@@ -12,6 +12,26 @@ export function registerPrefsScripts(win: Window): void {
   if (testBtn) {
     testBtn.addEventListener("command", () => {
       onTestConnection();
+    });
+  }
+
+  // Wire up sync now button
+  const syncBtn = doc.getElementById(
+    `zotero-prefpane-${config.addonRef}-sync-now`,
+  );
+  if (syncBtn) {
+    syncBtn.addEventListener("command", () => {
+      addon.hooks.onPrefsEvent("sync", {});
+    });
+  }
+
+  // Wire up full re-sync button
+  const fullSyncBtn = doc.getElementById(
+    `zotero-prefpane-${config.addonRef}-full-resync`,
+  );
+  if (fullSyncBtn) {
+    fullSyncBtn.addEventListener("command", () => {
+      addon.hooks.onPrefsEvent("fullSync", {});
     });
   }
 }
