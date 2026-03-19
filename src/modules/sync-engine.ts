@@ -377,12 +377,11 @@ export class SyncEngine {
     libraryID: number,
   ): Promise<Zotero.Item | null> {
     const data = misciteToZoteroData(mi);
-    const itemTypeID =
-      Zotero.ItemTypes.getID(data.itemType as string) ||
-      Zotero.ItemTypes.getID("journalArticle");
-    const item = new Zotero.Item();
+    const itemType = (data.itemType as string) || "journalArticle";
+    const item = new Zotero.Item(
+      itemType as ConstructorParameters<typeof Zotero.Item>[0],
+    );
     (item as unknown as Record<string, unknown>).libraryID = libraryID;
-    (item as unknown as Record<string, unknown>).itemTypeID = itemTypeID;
 
     // Set fields
     for (const [field, value] of Object.entries(data)) {
