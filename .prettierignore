@@ -1,6 +1,10 @@
-node_modules/
-build/
-.scaffold/
+.vscode
+build
+logs
+node_modules
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.scaffold
 addon/content/scripts/
 *.xpi
-package-lock.json

@@ -26,18 +26,19 @@
     "release": "zotero-plugin release",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
-    "test": "zotero-plugin test"
+    "test": "zotero-plugin test",
+    "update-deps": "npm update --save"
   },
   "dependencies": {
-    "zotero-plugin-toolkit": "^5.1.0"
+    "zotero-plugin-toolkit": "^5.1.0-beta.13"
   },
   "devDependencies": {
     "@zotero-plugin/eslint-config": "^0.6.7",
     "eslint": "^10.0.3",
-    "prettier": "^3.3.0",
+    "prettier": "^3.7.4",
     "typescript": "^5.9.3",
     "zotero-plugin-scaffold": "^0.8.2",
-    "zotero-types": "^4.1.0"
+    "zotero-types": "^4.1.0-beta.4"
   },
   "prettier": {
     "printWidth": 80,

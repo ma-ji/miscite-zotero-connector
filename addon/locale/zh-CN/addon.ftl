@@ -1,0 +1,9 @@
+sync-button-label = miscite 同步
+sync-button-tooltip = 与 miscite.review 同步
+sync-complete = 已同步：{ $created } 新增，{ $updated } 更新，{ $deleted } 删除
+sync-failed = 同步失败：{ $error }
+connection-success-title = miscite 连接
+connection-success-message = 连接成功！用户：{ $email }
+connection-failed-title = miscite 连接失败
+connection-failed-message = 无法连接到 miscite 服务器。{ $error }
+prefs-title = miscite 连接器

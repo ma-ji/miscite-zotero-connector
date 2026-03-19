@@ -1,7 +1,11 @@
 import { config } from "../../package.json";
+import { FluentMessageId } from "../../typings/i10n";
 
 export { initLocale, getString, getLocaleID };
 
+/**
+ * Initialize locale data
+ */
 function initLocale() {
   const l10n = new (
     typeof Localization === "undefined"
@@ -13,10 +17,33 @@ function initLocale() {
   };
 }
 
-function getString(localString: string): string;
-function getString(localString: string, branch: string): string;
+/**
+ * Get locale string.
+ * @see https://firefox-source-docs.mozilla.org/l10n/fluent/tutorial.html
+ * @param localString ftl key
+ * @param options.branch branch name
+ * @param options.args args
+ * @example
+ * ```ftl
+ * # addon.ftl
+ * addon-static-example = This is default branch!
+ *     .branch-example = This is a branch!
+ * addon-dynamic-example =
+ *    { $count ->
+ *        [one] I have { $count } apple
+ *       *[other] I have { $count } apples
+ *    }
+ * ```
+ * ```js
+ * getString("addon-static-example");
+ * getString("addon-static-example", { branch: "branch-example" });
+ * getString("addon-dynamic-example", { args: { count: 1 } });
+ * ```
+ */
+function getString(localString: FluentMessageId): string;
+function getString(localString: FluentMessageId, branch: string): string;
 function getString(
-  localeString: string,
+  localeString: FluentMessageId,
   options: { branch?: string | undefined; args?: Record<string, unknown> },
 ): string;
 function getString(...inputs: any[]) {
@@ -42,7 +69,7 @@ interface Pattern {
 }
 
 function _getString(
-  localeString: string,
+  localeString: FluentMessageId,
   options: { branch?: string | undefined; args?: Record<string, unknown> } = {},
 ): string {
   const localStringWithPrefix = `${config.addonRef}-${localeString}`;
@@ -64,6 +91,6 @@ function _getString(
   }
 }
 
-function getLocaleID(id: string) {
+function getLocaleID(id: FluentMessageId) {
   return `${config.addonRef}-${id}`;
 }

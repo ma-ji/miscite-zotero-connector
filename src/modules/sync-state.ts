@@ -6,8 +6,10 @@ export interface KeyMap {
   [key: string]: string | number;
 }
 
-export function getKeyMap(key: string): KeyMap {
-  const raw = getPref(key) as string;
+type KeyMapPref = "itemKeyMap" | "collectionKeyMap" | "fileKeyMap";
+
+export function getKeyMap(key: KeyMapPref): KeyMap {
+  const raw = getPref(key);
   try {
     return JSON.parse(raw || "{}");
   } catch {
@@ -15,7 +17,7 @@ export function getKeyMap(key: string): KeyMap {
   }
 }
 
-export function setKeyMap(key: string, map: KeyMap): void {
+export function setKeyMap(key: KeyMapPref, map: KeyMap): void {
   setPref(key, JSON.stringify(map));
 }
 
@@ -24,7 +26,7 @@ export function getDeleteQueue(): Array<{
   id: string;
   ts: number;
 }> {
-  const raw = getPref("deleteQueue") as string;
+  const raw = getPref("deleteQueue");
   try {
     return JSON.parse(raw || "[]");
   } catch {

@@ -1,7 +1,11 @@
-node_modules/
-build/
-.scaffold/
+.DS_Store
+node_modules
+pnpm-lock.yaml
+yarn.lock
+tsconfig.tsbuildinfo
+.env
+.scaffold
+build
+logs
 addon/content/scripts/
 *.xpi
-.env
-.DS_Store

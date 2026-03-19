@@ -1,0 +1,9 @@
+pref-title = miscite 连接器设置
+pref-server-url = 服务器地址
+pref-api-token = API 密钥
+pref-test-connection =
+    .label = 测试连接
+pref-auto-sync-enabled =
+    .label = 启用自动同步
+pref-auto-sync-interval = 同步间隔（分钟）
+pref-help = { $name } v{ $version }，构建于 { $time }
