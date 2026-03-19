@@ -1,5 +1,6 @@
 sync-button-label = miscite Sync
 sync-button-tooltip = Synchronize with miscite.review
+reset-sync-label = miscite Full Re-sync
 sync-complete = Synced: { $created } new, { $updated } updated, { $deleted } deleted
 sync-failed = Sync failed: { $error }
 connection-success-title = miscite Connection

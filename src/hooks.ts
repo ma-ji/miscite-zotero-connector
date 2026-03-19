@@ -102,6 +102,12 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
     menuItem.setAttribute("label", getString("sync-button-label"));
     menuItem.addEventListener("command", () => _triggerSync());
     menuTools.appendChild(menuItem);
+
+    const resetItem = doc.createXULElement("menuitem");
+    resetItem.id = "miscite-reset-sync-menuitem";
+    resetItem.setAttribute("label", getString("reset-sync-label"));
+    resetItem.addEventListener("command", () => _resetAndSync());
+    menuTools.appendChild(resetItem);
   }
 }
 
@@ -154,6 +160,16 @@ function _setupAutoSync(): void {
     intervalMin * 60 * 1000,
   );
   addon.data.syncTimer = timer;
+}
+
+async function _resetAndSync(): Promise<void> {
+  ztoolkit.log("Resetting sync state for full re-sync...");
+  setPref("lastSyncTime", "");
+  setPref("itemKeyMap", "{}");
+  setPref("collectionKeyMap", "{}");
+  setPref("fileKeyMap", "{}");
+  setPref("deleteQueue", "[]");
+  await _triggerSync();
 }
 
 async function _triggerSync(): Promise<void> {

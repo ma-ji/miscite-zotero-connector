@@ -1,5 +1,6 @@
 sync-button-label = miscite 同步
 sync-button-tooltip = 与 miscite.review 同步
+reset-sync-label = miscite 完整重新同步
 sync-complete = 已同步：{ $created } 新增，{ $updated } 更新，{ $deleted } 删除
 sync-failed = 同步失败：{ $error }
 connection-success-title = miscite 连接

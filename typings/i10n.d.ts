@@ -15,6 +15,7 @@ export type FluentMessageId =
   | 'pref-test-connection'
   | 'pref-title'
   | 'prefs-title'
+  | 'reset-sync-label'
   | 'sync-button-label'
   | 'sync-button-tooltip'
   | 'sync-complete'
