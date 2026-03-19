@@ -615,6 +615,10 @@ export class SyncEngine {
     if (desiredColIds.size === 0) {
       const unfiledId = await this._getUnfiledCollectionId(libraryID);
       if (unfiledId) desiredColIds.add(unfiledId);
+      log(
+        `Item ${zoteroKey}: no server collections resolved, ` +
+          `fallback to Unfiled (${unfiledId})`,
+      );
     }
 
     // Current collections this item belongs to
@@ -635,9 +639,15 @@ export class SyncEngine {
     // Add to desired collections the item is not already in
     for (const colId of desiredColIds) {
       const col = Zotero.Collections.get(colId);
-      if (col && !col.hasItem(zItem.id)) {
+      if (!col) {
+        log(`Collection ${colId} not found`);
+        continue;
+      }
+      const already = col.hasItem(zItem.id);
+      if (!already) {
         col.addItem(zItem.id);
         await col.saveTx();
+        log(`Added item ${zoteroKey} to collection ${col.name} (${colId})`);
       }
     }
   }
