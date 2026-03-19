@@ -144,7 +144,8 @@ export class SyncEngine {
     name: string,
     parentKey: string | false,
   ): Promise<number> {
-    const collections = Zotero.Collections.getByLibrary(libraryID);
+    // recursive=true to include child collections (not just top-level)
+    const collections = Zotero.Collections.getByLibrary(libraryID, true);
 
     // 1. Exact match: same name + same parent
     for (const col of collections) {
@@ -415,11 +416,15 @@ export class SyncEngine {
           delete itemKeyMap[mapKey];
           deleted++;
         } else if (entry.type === "collection") {
+          // Don't delete collections from server — they are server-managed.
+          // Just clear the local mapping so the next sync re-pulls them.
           const collectionKeyMap = getKeyMap("collectionKeyMap");
-          await api.deleteCollection(misciteId);
           delete collectionKeyMap[mapKey];
           setKeyMap("collectionKeyMap", collectionKeyMap);
-          deleted++;
+          log(
+            `Cleared local mapping for collection ${mapKey}` +
+              ` (server copy preserved)`,
+          );
         }
       } catch (err) {
         log(`Failed to process delete for ${entry.type} ${entry.id}: ${err}`);
