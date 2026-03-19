@@ -77,6 +77,7 @@ function _findCollection(
   for (const col of collections) {
     if (
       col.name === name &&
+      !col.deleted &&
       (parentKey === false ? !col.parentKey : col.parentKey === parentKey)
     ) {
       return col;

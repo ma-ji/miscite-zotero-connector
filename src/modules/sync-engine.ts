@@ -119,10 +119,12 @@ export class SyncEngine {
     parentKey: string | false,
   ): Promise<number> {
     // Search for existing collection with this name under the parent
+    // (skip trashed collections)
     const collections = Zotero.Collections.getByLibrary(libraryID);
     for (const col of collections) {
       if (
         col.name === name &&
+        !col.deleted &&
         (parentKey === false ? !col.parentKey : col.parentKey === parentKey)
       ) {
         return col.id;
@@ -363,10 +365,11 @@ export class SyncEngine {
     const s = new Zotero.Search();
     s.addCondition("libraryID", "is", String(libraryID));
     s.addCondition("DOI", "is", mi.doi);
+    s.addCondition("deleted", "false");
     const ids = await s.search();
-    if (ids.length > 0) {
-      const item = Zotero.Items.get(ids[0]);
-      if (item && item.isRegularItem()) return item;
+    for (const id of ids) {
+      const item = Zotero.Items.get(id);
+      if (item && item.isRegularItem() && !item.deleted) return item;
     }
 
     return null;

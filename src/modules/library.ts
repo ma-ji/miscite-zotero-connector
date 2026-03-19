@@ -31,7 +31,7 @@ export async function getRootCollectionID(): Promise<number> {
   if (cached && cached > 0) {
     try {
       const col = Zotero.Collections.get(cached);
-      if (col) return cached;
+      if (col && !col.deleted) return cached;
     } catch {
       // Collection was deleted, fall through
     }
@@ -40,9 +40,10 @@ export async function getRootCollectionID(): Promise<number> {
   const libraryID = Zotero.Libraries.userLibraryID;
 
   // Scan all local collections for an existing "miscite.review"
+  // (skip trashed collections)
   const allCollections = Zotero.Collections.getByLibrary(libraryID);
   for (const col of allCollections) {
-    if (col.name === COLLECTION_NAME && !col.parentKey) {
+    if (col.name === COLLECTION_NAME && !col.parentKey && !col.deleted) {
       setPref("rootCollectionId", col.id);
       log(
         `Found existing root collection "${COLLECTION_NAME}" (ID: ${col.id})`,
