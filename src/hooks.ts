@@ -20,7 +20,6 @@ export function onStartup(): void {
         if (event === "delete" && (type === "item" || type === "collection")) {
           const groupLibraryId = getPref("groupLibraryId") as number;
           if (!groupLibraryId) return;
-          // Queue deleted keys for sync
           const deleteQueue = JSON.parse(
             (getPref("deleteQueue") as string) || "[]",
           );
@@ -35,16 +34,13 @@ export function onStartup(): void {
     "miscite-connector",
   );
 
-  // Set up auto-sync timer
   _setupAutoSync();
-
   Zotero.MisciteConnector.data.initialized = true;
 }
 
 export function onMainWindowLoad(window: Window): void {
   const doc = window.document;
 
-  // Add sync button to toolbar
   const toolbarButton = doc.createXULElement("toolbarbutton");
   toolbarButton.id = "miscite-sync-button";
   toolbarButton.setAttribute("class", "zotero-tb-button");
@@ -72,7 +68,7 @@ export function onShutdown(): void {
   }
   const timer = Zotero.MisciteConnector?.data.syncTimer;
   if (timer) {
-    clearInterval(timer);
+    globalThis.clearInterval(timer);
     Zotero.MisciteConnector.data.syncTimer = null;
   }
   syncEngine = null;
@@ -85,7 +81,7 @@ function _setupAutoSync(): void {
 
   if (!enabled) return;
 
-  const timer = setInterval(
+  const timer = globalThis.setInterval(
     () => {
       _triggerSync();
     },
@@ -102,7 +98,6 @@ async function _triggerSync(): Promise<void> {
     Zotero.log(
       `[miscite] Sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted`,
     );
-    // Show notification
     const progressWin = new Zotero.ProgressWindow({ closeOnClick: true });
     progressWin.changeHeadline("miscite Sync");
     progressWin.addDescription(
@@ -111,7 +106,7 @@ async function _triggerSync(): Promise<void> {
     progressWin.show();
     progressWin.startCloseTimer(4000);
   } catch (err) {
-    Zotero.logError(`[miscite] Sync failed: ${err}`);
+    Zotero.logError(err instanceof Error ? err : new Error(String(err)));
     const progressWin = new Zotero.ProgressWindow({ closeOnClick: true });
     progressWin.changeHeadline("miscite Sync Failed");
     progressWin.addDescription(String(err));

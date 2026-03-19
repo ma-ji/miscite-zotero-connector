@@ -274,9 +274,10 @@ export class SyncEngine {
     libraryID: number,
   ): Promise<Zotero.Item | null> {
     const data = misciteToZoteroData(mi);
+    const itemTypeID = Zotero.ItemTypes.getID(data.itemType as string) || Zotero.ItemTypes.getID("journalArticle");
     const item = new Zotero.Item();
-    item.libraryID = libraryID;
-    item.itemTypeID = Zotero.ItemTypes.getID(data.itemType as string) || Zotero.ItemTypes.getID("journalArticle");
+    (item as unknown as Record<string, unknown>).libraryID = libraryID;
+    (item as unknown as Record<string, unknown>).itemTypeID = itemTypeID;
 
     // Set fields
     for (const [field, value] of Object.entries(data)) {
@@ -290,7 +291,7 @@ export class SyncEngine {
 
     // Set creators
     if (Array.isArray(data.creators)) {
-      item.setCreators(data.creators as Zotero.Item.CreatorJSON[]);
+      item.setCreators(data.creators as Parameters<Zotero.Item["setCreators"]>[0]);
     }
 
     await item.saveTx();
@@ -299,7 +300,7 @@ export class SyncEngine {
     // Add note if miscite item has notes
     if (mi.notes) {
       const note = new Zotero.Item("note");
-      note.libraryID = libraryID;
+      (note as unknown as Record<string, unknown>).libraryID = libraryID;
       note.parentKey = item.key;
       note.setNote(mi.notes);
       await note.saveTx();
@@ -324,7 +325,7 @@ export class SyncEngine {
     }
 
     if (Array.isArray(data.creators)) {
-      zItem.setCreators(data.creators as Zotero.Item.CreatorJSON[]);
+      zItem.setCreators(data.creators as Parameters<Zotero.Item["setCreators"]>[0]);
     }
 
     await zItem.saveTx();

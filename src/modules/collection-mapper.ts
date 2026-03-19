@@ -25,7 +25,6 @@ export async function ensureZoteroCollection(
   let parentKey: string | false = false;
 
   for (const name of segments) {
-    // Search for existing collection at this level
     const existing = _findCollection(libraryID, name, parentKey);
     if (existing) {
       parentKey = existing.key;
@@ -34,7 +33,7 @@ export async function ensureZoteroCollection(
 
     // Create new collection
     const col = new Zotero.Collection();
-    col.libraryID = libraryID;
+    (col as unknown as Record<string, unknown>).libraryID = libraryID;
     col.name = name;
     if (parentKey) {
       col.parentKey = parentKey;
@@ -43,16 +42,24 @@ export async function ensureZoteroCollection(
     parentKey = col.key;
   }
 
-  // Return the collection ID of the leaf
-  const leaf = _findCollection(libraryID, segments[segments.length - 1], parentKey === false ? false : _parentOfLeaf(libraryID, segments));
+  // Return the ID of the leaf collection
+  const leaf = _findCollection(
+    libraryID,
+    segments[segments.length - 1],
+    segments.length > 1
+      ? _resolveParentKey(libraryID, segments.slice(0, -1))
+      : false,
+  );
   return leaf ? leaf.id : 0;
 }
 
-function _parentOfLeaf(libraryID: number, segments: string[]): string | false {
-  if (segments.length <= 1) return false;
+function _resolveParentKey(
+  libraryID: number,
+  segments: string[],
+): string | false {
   let parentKey: string | false = false;
-  for (let i = 0; i < segments.length - 1; i++) {
-    const col = _findCollection(libraryID, segments[i], parentKey);
+  for (const name of segments) {
+    const col = _findCollection(libraryID, name, parentKey);
     if (!col) return false;
     parentKey = col.key;
   }
@@ -68,9 +75,7 @@ function _findCollection(
   for (const col of collections) {
     if (
       col.name === name &&
-      (parentKey === false
-        ? !col.parentKey
-        : col.parentKey === parentKey)
+      (parentKey === false ? !col.parentKey : col.parentKey === parentKey)
     ) {
       return col;
     }
@@ -81,19 +86,18 @@ function _findCollection(
 /**
  * Build a miscite path string from a Zotero collection by walking up the parent chain.
  */
-export function zoteroCollectionToPath(
-  collection: Zotero.Collection,
-): string {
+export function zoteroCollectionToPath(collection: Zotero.Collection): string {
   const segments: string[] = [];
   let current: Zotero.Collection | null = collection;
 
   while (current) {
     segments.unshift(current.name);
     if (current.parentKey) {
-      const parent = Zotero.Collections.getByLibrary(current.libraryID).find(
-        (c: Zotero.Collection) => c.key === current!.parentKey,
+      const pKey = current.parentKey;
+      const found = Zotero.Collections.getByLibrary(current.libraryID).find(
+        (c: Zotero.Collection) => c.key === pKey,
       );
-      current = parent || null;
+      current = found || null;
     } else {
       current = null;
     }

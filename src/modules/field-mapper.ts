@@ -169,13 +169,15 @@ export function zoteroToMisciteData(
   const workType = ZOTERO_TO_WORK_TYPE[itemType] || itemType;
 
   // Extract authors
-  const creators = zoteroItem.getCreators();
+  const creators = zoteroItem.getCreators() as Array<{
+    creatorType?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+  }>;
   const authors = creators
-    .filter(
-      (c: Zotero.Item.CreatorJSON) =>
-        c.creatorType === "author" || !c.creatorType,
-    )
-    .map((c: Zotero.Item.CreatorJSON) => {
+    .filter((c) => c.creatorType === "author" || !c.creatorType)
+    .map((c) => {
       if (c.firstName && c.lastName) {
         return `${c.firstName} ${c.lastName}`;
       }

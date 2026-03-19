@@ -2,7 +2,7 @@
  * Sync file attachments between miscite and Zotero.
  */
 import type { MisciteApiClient, MisciteFile } from "./miscite-api";
-import { getKeyMap, setKeyMap, type KeyMap } from "./sync-state";
+import { getKeyMap, setKeyMap } from "./sync-state";
 import { log } from "./utils";
 
 /**
@@ -26,7 +26,7 @@ export async function pullFiles(
   for (const attId of attachmentIDs) {
     const att = Zotero.Items.get(attId);
     if (att) {
-      const hash = att.attachmentHash;
+      const hash: string = att.attachmentHash || "";
       if (hash) existingHashes.add(hash);
     }
   }
@@ -46,7 +46,7 @@ export async function pullFiles(
       const attachment = await _importAttachment(
         data,
         rf,
-        zoteroItem.key,
+        zoteroItem,
         libraryID,
       );
       if (attachment) {
@@ -67,7 +67,7 @@ export async function pullFiles(
  * Push new Zotero attachments to miscite for a given item.
  */
 export async function pushFiles(
-  api: MisciteApiClient,
+  _api: MisciteApiClient,
   misciteItemId: number,
   zoteroItem: Zotero.Item,
 ): Promise<number> {
@@ -83,23 +83,16 @@ export async function pushFiles(
   for (const attId of attachmentIDs) {
     const att = Zotero.Items.get(attId);
     if (!att || !att.isAttachment()) continue;
-
-    // Skip if already mapped
     if (reverseMap[att.key]) continue;
 
     try {
       const filePath = await att.getFilePathAsync();
       if (!filePath) continue;
 
-      // File upload is handled via the API's multipart upload
-      // For now, we log and skip - full upload requires FormData with file
       log(
         `Would upload attachment ${att.key} (${filePath}) to miscite item ${misciteItemId}`,
       );
-      // TODO: Implement file upload via fetch with FormData
-      // const formData = new FormData();
-      // formData.append('file', new File([data], att.attachmentFilename));
-      // await api.uploadFile(misciteItemId, formData);
+      // TODO: Implement file upload via Zotero.HTTP with multipart body
     } catch (err) {
       log(`Failed to push file ${att.key}: ${err}`);
     }
@@ -109,30 +102,31 @@ export async function pushFiles(
 }
 
 async function _importAttachment(
-  data: ArrayBuffer,
+  data: string,
   fileInfo: MisciteFile,
-  parentKey: string,
+  parentItem: Zotero.Item,
   libraryID: number,
 ): Promise<Zotero.Item | null> {
   // Write data to a temp file
   const tmpDir = Zotero.getTempDirectory();
-  const tmpFile = OS.Path.join(tmpDir.path, fileInfo.filename);
-  const uint8 = new Uint8Array(data);
+  const tmpFile = PathUtils.join(tmpDir.path, fileInfo.filename);
 
-  await OS.File.writeAtomic(tmpFile, uint8);
+  // Convert string to Uint8Array for writing
+  const encoder = new TextEncoder();
+  const uint8 = encoder.encode(data);
+  await IOUtils.write(tmpFile, uint8);
 
   try {
     const attachment = await Zotero.Attachments.importFromFile({
       file: tmpFile,
       libraryID,
-      parentItemID: Zotero.Items.getByLibraryAndKey(libraryID, parentKey)?.id,
+      parentItemID: parentItem.id,
       contentType: fileInfo.content_type,
     });
     return attachment;
   } finally {
-    // Clean up temp file
     try {
-      await OS.File.remove(tmpFile);
+      await IOUtils.remove(tmpFile);
     } catch {
       // Ignore cleanup errors
     }

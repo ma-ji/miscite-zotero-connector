@@ -1,5 +1,6 @@
 /**
  * HTTP client for the miscite sync REST API.
+ * Uses Zotero.HTTP.request instead of fetch (not available in sandbox).
  */
 import { getPref } from "./sync-state";
 
@@ -67,20 +68,22 @@ export class MisciteApiClient {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
     };
-    const init: RequestInit = { method, headers };
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, init);
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
+    const response = await Zotero.HTTP.request(method, url, {
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      responseType: "json",
+    });
+
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(
-        `miscite API error ${response.status}: ${text.slice(0, 200)}`,
+        `miscite API error ${response.status}: ${String(response.responseText || "").slice(0, 200)}`,
       );
     }
-    return (await response.json()) as T;
+    return response.response as T;
   }
 
   async testConnection(): Promise<{ user_id: string; email: string }> {
@@ -155,15 +158,16 @@ export class MisciteApiClient {
     return this.request("GET", `/items/${itemId}/files`);
   }
 
-  async downloadFile(fileId: number): Promise<ArrayBuffer> {
+  async downloadFile(fileId: number): Promise<string> {
     const url = `${this.baseUrl}/api/v1/sync/files/${fileId}/download`;
-    const response = await fetch(url, {
+    const response = await Zotero.HTTP.request("GET", url, {
       headers: { Authorization: `Bearer ${this.token}` },
+      responseType: "text",
     });
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`File download failed: ${response.status}`);
     }
-    return response.arrayBuffer();
+    return response.responseText;
   }
 
   async deleteFile(fileId: number): Promise<{ ok: boolean }> {

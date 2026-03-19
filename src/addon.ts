@@ -7,7 +7,7 @@ export class Addon {
     initialized: false,
     env: __env__,
     ztoolkit: createZToolkit(),
-    syncTimer: null as ReturnType<typeof setInterval> | null,
+    syncTimer: null as number | null,
   };
 
   hooks = {

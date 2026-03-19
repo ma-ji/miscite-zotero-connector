@@ -9,5 +9,5 @@ export function log(...args: unknown[]): void {
 }
 
 export function logError(...args: unknown[]): void {
-  Zotero.logError(`[miscite] ${args.map(String).join(" ")}`);
+  Zotero.logError(new Error(`[miscite] ${args.map(String).join(" ")}`));
 }

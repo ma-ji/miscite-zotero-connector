@@ -10,18 +10,16 @@ export async function onTestConnection(): Promise<void> {
     const result = await api.testConnection();
     log(`Connection successful: ${result.email}`);
 
-    const ps = Services.prompt;
-    ps.alert(
-      null,
+    Services.prompt.alert(
+      Services.wm.getMostRecentWindow("navigator:browser"),
       "miscite Connection",
       `Connected successfully!\n\nUser: ${result.email}`,
     );
   } catch (err) {
     log(`Connection test failed: ${err}`);
 
-    const ps = Services.prompt;
-    ps.alert(
-      null,
+    Services.prompt.alert(
+      Services.wm.getMostRecentWindow("navigator:browser"),
       "miscite Connection Failed",
       `Could not connect to miscite server.\n\n${String(err)}`,
     );
