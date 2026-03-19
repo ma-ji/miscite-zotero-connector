@@ -149,7 +149,7 @@ export class SyncEngine {
    */
   private async _pushCollections(
     api: MisciteApiClient,
-    libraryID: number,
+    _libraryID: number,
   ): Promise<void> {
     const rootColId = await getRootCollectionID();
     const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
