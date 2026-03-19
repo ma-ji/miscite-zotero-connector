@@ -89,6 +89,11 @@ export class SyncEngine {
     const collectionKeyMap = getKeyMap("collectionKeyMap");
     const rootColId = await getRootCollectionID();
 
+    log(
+      `Collections: ${response.data.length} from server,` +
+        ` ${Object.keys(collectionKeyMap).length} in keymap`,
+    );
+
     for (const mc of response.data) {
       const mapKey = `m${mc.id}`;
       if (collectionKeyMap[mapKey]) continue; // Already mapped
@@ -104,6 +109,7 @@ export class SyncEngine {
         );
         if (colId) {
           collectionKeyMap[mapKey] = colId;
+          log(`Mapped collection "${mc.name}" (m${mc.id} -> ${colId})`);
         }
       } catch (err) {
         log(`Failed to create collection "${mc.name}": ${err}`);
@@ -124,7 +130,7 @@ export class SyncEngine {
     for (const col of collections) {
       if (
         col.name === name &&
-        !col.deleted &&
+        !(col as any).deleted &&
         (parentKey === false ? !col.parentKey : col.parentKey === parentKey)
       ) {
         return col.id;
@@ -362,14 +368,20 @@ export class SyncEngine {
   ): Promise<Zotero.Item | null> {
     if (!mi.doi) return null;
 
-    const s = new Zotero.Search();
-    s.addCondition("libraryID", "is", String(libraryID));
-    s.addCondition("DOI", "is", mi.doi);
-    s.addCondition("deleted", "false");
-    const ids = await s.search();
-    for (const id of ids) {
-      const item = Zotero.Items.get(id);
-      if (item && item.isRegularItem() && !item.deleted) return item;
+    try {
+      const s = new Zotero.Search();
+      s.addCondition("libraryID", "is", String(libraryID));
+      s.addCondition("DOI", "is", mi.doi);
+      const ids = await s.search();
+      for (const id of ids) {
+        const item = Zotero.Items.get(id);
+        if (!item || !item.isRegularItem()) continue;
+        // Skip items in trash
+        if (item.deleted) continue;
+        return item;
+      }
+    } catch (err) {
+      log(`DOI search failed for "${mi.doi}": ${err}`);
     }
 
     return null;
@@ -467,12 +479,14 @@ export class SyncEngine {
 
     for (const mcId of mi.collection_ids) {
       const colZoteroId = collectionKeyMap[`m${mcId}`];
-      if (colZoteroId) {
-        const col = Zotero.Collections.get(colZoteroId as number);
-        if (col && !col.hasItem(zItem.id)) {
-          col.addItem(zItem.id);
-          await col.saveTx();
-        }
+      if (!colZoteroId) {
+        log(`No local collection mapped for miscite collection ${mcId}`);
+        continue;
+      }
+      const col = Zotero.Collections.get(colZoteroId as number);
+      if (col && !col.hasItem(zItem.id)) {
+        col.addItem(zItem.id);
+        await col.saveTx();
       }
     }
   }
