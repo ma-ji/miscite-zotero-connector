@@ -62,6 +62,9 @@ export class SyncEngine {
       log("Phase 1: Pulling collections...");
       await this._pullCollections(api, libraryID, lastSync);
 
+      // Phase 1b: Push locally-created collections to miscite
+      await this._pushCollections(api, libraryID);
+
       // Phase 2: Pull items from miscite -> Zotero
       log("Phase 2: Pulling items...");
       const pullResult = await this._pullItems(api, libraryID, lastSync);
@@ -137,6 +140,54 @@ export class SyncEngine {
     }
 
     setKeyMap("collectionKeyMap", collectionKeyMap);
+  }
+
+  /**
+   * Push locally-created subcollections under miscite.review to the
+   * server.  Any child collection of the root that is NOT already in
+   * collectionKeyMap is treated as new and created on the server.
+   */
+  private async _pushCollections(
+    api: MisciteApiClient,
+    libraryID: number,
+  ): Promise<void> {
+    const rootColId = await getRootCollectionID();
+    const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
+    if (!rootCol) return;
+
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
+
+    // Build reverse map: local Zotero collection ID → miscite map key
+    const mappedLocalIds = new Set<number>(
+      Object.values(collectionKeyMap).map((v) => v as number),
+    );
+
+    // Get child collections of the root
+    const childColIds: number[] = rootCol.getChildCollections(true);
+    let pushed = 0;
+
+    for (const colId of childColIds) {
+      if (mappedLocalIds.has(colId)) continue; // already mapped
+      const col = Zotero.Collections.get(colId);
+      if (!col || (col as any).deleted) continue;
+
+      try {
+        const response = await api.createCollection(col.name);
+        const newCol = response.data;
+        collectionKeyMap[`m${newCol.id}`] = colId;
+        pushed++;
+        log(`Pushed new collection "${col.name}" -> m${newCol.id}`);
+      } catch (err) {
+        log(`Failed to push collection "${col.name}": ${err}`);
+      }
+    }
+
+    if (pushed > 0) {
+      setKeyMap("collectionKeyMap", collectionKeyMap);
+      // Reset managed-collection cache since keymap changed
+      this._managedColIds = null;
+      this._reverseColMap = null;
+    }
   }
 
   private async _ensureChildCollection(
