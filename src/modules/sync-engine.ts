@@ -1,16 +1,9 @@
 /**
  * Core sync engine: pull from miscite, push from Zotero, handle deletes.
  */
-import {
-  MisciteApiClient,
-  type MisciteItem,
-  type MisciteCollection,
-} from "./miscite-api";
+import { MisciteApiClient, type MisciteItem } from "./miscite-api";
 import { misciteToZoteroData, zoteroToMisciteData } from "./field-mapper";
-import {
-  ensureZoteroCollection,
-  zoteroCollectionToPath,
-} from "./collection-mapper";
+import { ensureZoteroCollection } from "./collection-mapper";
 import { getGroupLibraryID } from "./group-library";
 import { pullFiles, pushFiles } from "./file-sync";
 import {
@@ -20,7 +13,6 @@ import {
   setKeyMap,
   getDeleteQueue,
   clearDeleteQueue,
-  type KeyMap,
 } from "./sync-state";
 import { log } from "./utils";
 
