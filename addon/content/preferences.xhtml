@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<!DOCTYPE window>
+<window
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+>
+  <vbox id="miscite-connector-preferences">
+    <groupbox>
+      <label><html:h2 data-l10n-id="miscite-pref-title"/></label>
+
+      <hbox align="center">
+        <label data-l10n-id="miscite-pref-server-url" control="miscite-server-url"/>
+        <html:input id="miscite-server-url" type="text"
+          preference="extensions.miscite-connector.serverUrl"
+          style="flex: 1; min-width: 250px;"/>
+      </hbox>
+
+      <hbox align="center">
+        <label data-l10n-id="miscite-pref-api-token" control="miscite-api-token"/>
+        <html:input id="miscite-api-token" type="password"
+          preference="extensions.miscite-connector.apiToken"
+          style="flex: 1; min-width: 250px;"/>
+      </hbox>
+
+      <hbox>
+        <button id="miscite-test-connection" data-l10n-id="miscite-pref-test-connection"/>
+      </hbox>
+
+      <separator class="thin"/>
+
+      <hbox align="center">
+        <checkbox id="miscite-auto-sync-enabled"
+          data-l10n-id="miscite-pref-auto-sync-enabled"
+          preference="extensions.miscite-connector.autoSyncEnabled"/>
+      </hbox>
+
+      <hbox align="center">
+        <label data-l10n-id="miscite-pref-auto-sync-interval" control="miscite-auto-sync-interval"/>
+        <menulist id="miscite-auto-sync-interval"
+          preference="extensions.miscite-connector.autoSyncInterval">
+          <menupopup>
+            <menuitem label="5" value="5"/>
+            <menuitem label="15" value="15"/>
+            <menuitem label="30" value="30"/>
+            <menuitem label="60" value="60"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+    </groupbox>
+  </vbox>
+</window>

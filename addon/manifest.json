@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "__addonName__",
+  "version": "__buildVersion__",
+  "description": "Two-way sync between miscite and Zotero",
+  "icons": {},
+  "applications": {
+    "zotero": {
+      "id": "__addonID__",
+      "update_url": "__updateURL__",
+      "strict_min_version": "6.999",
+      "strict_max_version": "8.*"
+    }
+  }
+}

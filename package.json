@@ -1,0 +1,30 @@
+{
+  "name": "miscite-zotero-connector",
+  "version": "0.1.0",
+  "description": "Two-way sync between miscite and Zotero",
+  "config": {
+    "addonName": "Miscite Connector",
+    "addonID": "miscite-sync@miscite.review",
+    "addonRef": "miscite-connector",
+    "addonInstance": "MisciteConnector",
+    "prefsPrefix": "extensions.miscite-connector"
+  },
+  "scripts": {
+    "start": "zotero-plugin serve",
+    "build": "tsc --noEmit && zotero-plugin build",
+    "release": "zotero-plugin release",
+    "lint": "eslint src --fix",
+    "lint:check": "eslint src"
+  },
+  "dependencies": {
+    "zotero-plugin-toolkit": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "zotero-plugin-scaffold": "^0.1.8",
+    "zotero-types": "^2.4.0",
+    "@anthropic-ai/eslint-config": "^1.0.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.3.0"
+  }
+}
