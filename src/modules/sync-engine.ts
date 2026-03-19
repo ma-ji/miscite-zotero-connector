@@ -25,8 +25,17 @@ export interface SyncResult {
 export class SyncEngine {
   async sync(): Promise<SyncResult> {
     const api = new MisciteApiClient();
+
+    // Verify connection first
+    log("Testing API connection...");
+    const me = await api.testConnection();
+    log(`Authenticated as: ${me.email}`);
+
     const libraryID = await getGroupLibraryID();
+    log(`Using library ID: ${libraryID}`);
+
     const lastSync = (getPref("lastSyncTime") as string) || "";
+    log(`Last sync: ${lastSync || "(first sync)"}`);
 
     const result: SyncResult = {
       created: 0,
@@ -37,21 +46,28 @@ export class SyncEngine {
 
     try {
       // Phase 1: Pull collections from miscite
+      log("Phase 1: Pulling collections...");
       await this._pullCollections(api, libraryID, lastSync);
 
       // Phase 2: Pull items from miscite -> Zotero
+      log("Phase 2: Pulling items...");
       const pullResult = await this._pullItems(api, libraryID, lastSync);
       result.created += pullResult.created;
       result.updated += pullResult.updated;
+      log(`Pull: ${pullResult.created} created, ${pullResult.updated} updated`);
 
       // Phase 3: Push items from Zotero -> miscite
+      log("Phase 3: Pushing items...");
       const pushResult = await this._pushItems(api, libraryID, lastSync);
       result.created += pushResult.created;
       result.updated += pushResult.updated;
+      log(`Push: ${pushResult.created} created, ${pushResult.updated} updated`);
 
       // Phase 4: Process delete queue
+      log("Phase 4: Processing deletes...");
       const deleteResult = await this._processDeletes(api, libraryID);
       result.deleted += deleteResult;
+      log(`Deletes: ${deleteResult}`);
 
       // Update last sync time from server
       const timeCheck = await api.listItems();
@@ -139,6 +155,10 @@ export class SyncEngine {
       const sinceParam = since || undefined;
       const response = await api.listItems(sinceParam, offset);
       hasMore = response.has_more;
+      log(
+        `API returned ${response.data.length} items` +
+          ` (offset=${offset}, has_more=${hasMore})`,
+      );
 
       for (const mi of response.data) {
         try {
