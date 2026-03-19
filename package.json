@@ -2,6 +2,10 @@
   "name": "miscite-zotero-connector",
   "version": "0.1.0",
   "description": "Two-way sync between miscite and Zotero",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ma-ji/miscite-zotero-connector.git"
+  },
   "config": {
     "addonName": "Miscite Connector",
     "addonID": "miscite-sync@miscite.review",
