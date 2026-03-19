@@ -167,7 +167,7 @@ export class SyncEngine {
           continue;
         }
         // Check whether the current parent is (or was) a miscite root
-        let isOrphan = false;
+        let isOrphan: boolean;
         try {
           const parent = Zotero.Collections.getByLibraryAndKey(
             libraryID,
