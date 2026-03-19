@@ -624,31 +624,30 @@ export class SyncEngine {
     // Current collections this item belongs to
     const currentColIds: number[] = zItem.getCollections();
 
+    // Compute adds and removes, then batch-save the item once
+    let changed = false;
+
     // Remove from managed collections that are NOT in the desired set
     for (const colId of currentColIds) {
       if (colId === rootColId) continue; // never touch root
       if (!managedIds.has(colId)) continue; // not managed by miscite
       if (desiredColIds.has(colId)) continue; // still desired
-      const col = Zotero.Collections.get(colId);
-      if (col) {
-        col.removeItem(zItem.id);
-        await col.saveTx();
-      }
+      zItem.removeFromCollection(colId);
+      changed = true;
     }
 
     // Add to desired collections the item is not already in
+    const currentSet = new Set(currentColIds);
     for (const colId of desiredColIds) {
-      const col = Zotero.Collections.get(colId);
-      if (!col) {
-        log(`Collection ${colId} not found`);
-        continue;
+      if (!currentSet.has(colId)) {
+        zItem.addToCollection(colId);
+        changed = true;
+        log(`Added item ${zoteroKey} to collection ${colId}`);
       }
-      const already = col.hasItem(zItem.id);
-      if (!already) {
-        col.addItem(zItem.id);
-        await col.saveTx();
-        log(`Added item ${zoteroKey} to collection ${col.name} (${colId})`);
-      }
+    }
+
+    if (changed) {
+      await zItem.saveTx();
     }
   }
 
