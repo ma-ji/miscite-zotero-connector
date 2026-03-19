@@ -67,7 +67,7 @@ export async function pullFiles(
  * Push new Zotero attachments to miscite for a given item.
  */
 export async function pushFiles(
-  _api: MisciteApiClient,
+  api: MisciteApiClient,
   misciteItemId: number,
   zoteroItem: Zotero.Item,
 ): Promise<number> {
@@ -83,21 +83,38 @@ export async function pushFiles(
   for (const attId of attachmentIDs) {
     const att = Zotero.Items.get(attId);
     if (!att || !att.isAttachment()) continue;
-    if (reverseMap[att.key]) continue;
+    if (reverseMap[att.key]) continue; // Already synced
 
     try {
       const filePath = await att.getFilePathAsync();
       if (!filePath) continue;
 
-      log(
-        `Would upload attachment ${att.key} (${filePath}) to miscite item ${misciteItemId}`,
+      // Read the file content
+      const fileData = await IOUtils.read(filePath);
+      const filename =
+        PathUtils.filename(filePath) || `attachment_${att.key}`;
+      const contentType =
+        att.attachmentContentType || "application/octet-stream";
+
+      log(`Uploading attachment ${att.key} (${filename}) to miscite item ${misciteItemId}`);
+      const response = await api.uploadFile(
+        misciteItemId,
+        filename,
+        contentType,
+        fileData,
       );
-      // TODO: Implement file upload via Zotero.HTTP with multipart body
+
+      if (response.data) {
+        fileKeyMap[`m${response.data.id}`] = att.key;
+        uploaded++;
+        log(`Uploaded file: ${filename} -> miscite file ${response.data.id}`);
+      }
     } catch (err) {
       log(`Failed to push file ${att.key}: ${err}`);
     }
   }
 
+  setKeyMap("fileKeyMap", fileKeyMap);
   return uploaded;
 }
 

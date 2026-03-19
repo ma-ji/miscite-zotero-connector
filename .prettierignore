@@ -3,5 +3,4 @@ build/
 .scaffold/
 addon/content/scripts/
 *.xpi
-.env
-.DS_Store
+package-lock.json

@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - v**
 
 permissions:
   contents: write
@@ -18,12 +18,18 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run build
+      - run: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Get version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: .scaffold/build/*.xpi
+          files: |
+            .scaffold/build/*.xpi
+            .scaffold/build/update.json
+            .scaffold/build/update-beta.json
           generate_release_notes: true
           name: "v${{ steps.version.outputs.version }}"

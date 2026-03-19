@@ -1,6 +1,18 @@
-/* eslint-disable no-var */
-declare const __env__: "development" | "production";
+declare const _globalThis: {
+  [key: string]: any;
+  Zotero: _ZoteroTypes.Zotero;
+  ztoolkit: ZToolkit;
+  addon: typeof addon;
+};
 
-declare namespace Zotero {
-  let MisciteConnector: import("../src/addon").Addon;
-}
+declare type ZToolkit = ReturnType<
+  typeof import("../src/utils/ztoolkit").createZToolkit
+>;
+
+declare const ztoolkit: ZToolkit;
+
+declare const rootURI: string;
+
+declare const addon: import("../src/addon").default;
+
+declare const __env__: "production" | "development";

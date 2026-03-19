@@ -1,52 +1,73 @@
-<?xml version="1.0"?>
-<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
-<!DOCTYPE window>
-<window
-  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-  xmlns:html="http://www.w3.org/1999/xhtml"
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<groupbox
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
-  <vbox id="miscite-connector-preferences">
-    <groupbox>
-      <label><html:h2 data-l10n-id="miscite-pref-title"/></label>
+  <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
 
-      <hbox align="center">
-        <label data-l10n-id="miscite-pref-server-url" control="miscite-server-url"/>
-        <html:input id="miscite-server-url" type="text"
-          preference="extensions.miscite-connector.serverUrl"
-          style="flex: 1; min-width: 250px;"/>
-      </hbox>
+  <hbox align="center">
+    <html:label
+      for="zotero-prefpane-__addonRef__-server-url"
+      data-l10n-id="pref-server-url"
+    ></html:label>
+    <html:input
+      type="text"
+      id="zotero-prefpane-__addonRef__-server-url"
+      preference="serverUrl"
+      style="flex: 1; min-width: 250px;"
+    ></html:input>
+  </hbox>
 
-      <hbox align="center">
-        <label data-l10n-id="miscite-pref-api-token" control="miscite-api-token"/>
-        <html:input id="miscite-api-token" type="password"
-          preference="extensions.miscite-connector.apiToken"
-          style="flex: 1; min-width: 250px;"/>
-      </hbox>
+  <hbox align="center">
+    <html:label
+      for="zotero-prefpane-__addonRef__-api-token"
+      data-l10n-id="pref-api-token"
+    ></html:label>
+    <html:input
+      type="password"
+      id="zotero-prefpane-__addonRef__-api-token"
+      preference="apiToken"
+      style="flex: 1; min-width: 250px;"
+    ></html:input>
+  </hbox>
 
-      <hbox>
-        <button id="miscite-test-connection" data-l10n-id="miscite-pref-test-connection"/>
-      </hbox>
+  <hbox>
+    <button
+      id="zotero-prefpane-__addonRef__-test-connection"
+      data-l10n-id="pref-test-connection"
+    />
+  </hbox>
 
-      <separator class="thin"/>
+  <separator class="thin" />
 
-      <hbox align="center">
-        <checkbox id="miscite-auto-sync-enabled"
-          data-l10n-id="miscite-pref-auto-sync-enabled"
-          preference="extensions.miscite-connector.autoSyncEnabled"/>
-      </hbox>
+  <checkbox
+    id="zotero-prefpane-__addonRef__-auto-sync-enabled"
+    preference="autoSyncEnabled"
+    data-l10n-id="pref-auto-sync-enabled"
+  />
 
-      <hbox align="center">
-        <label data-l10n-id="miscite-pref-auto-sync-interval" control="miscite-auto-sync-interval"/>
-        <menulist id="miscite-auto-sync-interval"
-          preference="extensions.miscite-connector.autoSyncInterval">
-          <menupopup>
-            <menuitem label="5" value="5"/>
-            <menuitem label="15" value="15"/>
-            <menuitem label="30" value="30"/>
-            <menuitem label="60" value="60"/>
-          </menupopup>
-        </menulist>
-      </hbox>
-    </groupbox>
-  </vbox>
-</window>
+  <hbox align="center">
+    <html:label
+      for="zotero-prefpane-__addonRef__-auto-sync-interval"
+      data-l10n-id="pref-auto-sync-interval"
+    ></html:label>
+    <menulist
+      id="zotero-prefpane-__addonRef__-auto-sync-interval"
+      preference="autoSyncInterval"
+    >
+      <menupopup>
+        <menuitem label="5" value="5" />
+        <menuitem label="15" value="15" />
+        <menuitem label="30" value="30" />
+        <menuitem label="60" value="60" />
+      </menupopup>
+    </menulist>
+  </hbox>
+</groupbox>
+<vbox>
+  <html:label
+    data-l10n-id="pref-help"
+    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+  ></html:label>
+</vbox>

@@ -1,19 +1,34 @@
-import { createZToolkit } from "./modules/utils";
-import * as hooks from "./hooks";
+import { config } from "../package.json";
+import hooks from "./hooks";
+import { createZToolkit } from "./utils/ztoolkit";
 
-export class Addon {
-  data = {
-    alive: true,
-    initialized: false,
-    env: __env__,
-    ztoolkit: createZToolkit(),
-    syncTimer: null as number | null,
+class Addon {
+  public data: {
+    alive: boolean;
+    config: typeof config;
+    env: "development" | "production";
+    initialized?: boolean;
+    ztoolkit: ZToolkit;
+    locale?: {
+      current: any;
+    };
+    syncTimer: number | null;
   };
+  public hooks: typeof hooks;
+  public api: object;
 
-  hooks = {
-    onStartup: hooks.onStartup,
-    onMainWindowLoad: hooks.onMainWindowLoad,
-    onMainWindowUnload: hooks.onMainWindowUnload,
-    onShutdown: hooks.onShutdown,
-  };
+  constructor() {
+    this.data = {
+      alive: true,
+      config,
+      env: __env__,
+      initialized: false,
+      ztoolkit: createZToolkit(),
+      syncTimer: null,
+    };
+    this.hooks = hooks;
+    this.api = {};
+  }
 }
+
+export default Addon;

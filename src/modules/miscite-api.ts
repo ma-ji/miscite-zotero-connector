@@ -2,7 +2,7 @@
  * HTTP client for the miscite sync REST API.
  * Uses Zotero.HTTP.request instead of fetch (not available in sandbox).
  */
-import { getPref } from "./sync-state";
+import { getPref } from "../utils/prefs";
 
 export interface MisciteItem {
   id: number;
@@ -54,7 +54,10 @@ export class MisciteApiClient {
   private token: string;
 
   constructor() {
-    this.baseUrl = ((getPref("serverUrl") as string) || "").replace(/\/+$/, "");
+    this.baseUrl = ((getPref("serverUrl") as string) || "").replace(
+      /\/+$/,
+      "",
+    );
     this.token = (getPref("apiToken") as string) || "";
   }
 
@@ -62,6 +65,7 @@ export class MisciteApiClient {
     method: string,
     path: string,
     body?: unknown,
+    options?: { responseType?: string },
   ): Promise<T> {
     const url = `${this.baseUrl}/api/v1/sync${path}`;
     const headers: Record<string, string> = {
@@ -75,7 +79,7 @@ export class MisciteApiClient {
     const response = await Zotero.HTTP.request(method, url, {
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      responseType: "json",
+      responseType: (options?.responseType as XMLHttpRequestResponseType) || "json",
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -92,8 +96,12 @@ export class MisciteApiClient {
 
   async listItems(
     since?: string,
+    offset?: number,
   ): Promise<ApiEnvelope<MisciteItem[]>> {
-    const qs = since ? `?since=${encodeURIComponent(since)}` : "";
+    const params: string[] = [];
+    if (since) params.push(`since=${encodeURIComponent(since)}`);
+    if (offset && offset > 0) params.push(`offset=${offset}`);
+    const qs = params.length > 0 ? `?${params.join("&")}` : "";
     return this.request("GET", `/items${qs}`);
   }
 
@@ -168,6 +176,49 @@ export class MisciteApiClient {
       throw new Error(`File download failed: ${response.status}`);
     }
     return new Uint8Array(response.response as ArrayBuffer);
+  }
+
+  async uploadFile(
+    itemId: number,
+    filename: string,
+    contentType: string,
+    data: Uint8Array,
+  ): Promise<ApiEnvelope<MisciteFile>> {
+    const url = `${this.baseUrl}/api/v1/sync/items/${itemId}/files`;
+
+    // Build multipart form data manually since FormData is not available
+    // in the Zotero sandbox environment
+    const boundary = `----MisciteBoundary${Date.now()}`;
+    const header =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: ${contentType}\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+
+    const headerBytes = new TextEncoder().encode(header);
+    const footerBytes = new TextEncoder().encode(footer);
+    const body = new Uint8Array(
+      headerBytes.length + data.length + footerBytes.length,
+    );
+    body.set(headerBytes, 0);
+    body.set(data, headerBytes.length);
+    body.set(footerBytes, headerBytes.length + data.length);
+
+    const response = await Zotero.HTTP.request("POST", url, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: body as unknown as string,
+      responseType: "json",
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(
+        `File upload failed: ${response.status} ${String(response.responseText || "").slice(0, 200)}`,
+      );
+    }
+    return response.response as ApiEnvelope<MisciteFile>;
   }
 
   async deleteFile(fileId: number): Promise<{ ok: boolean }> {

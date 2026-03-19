@@ -1,11 +1,22 @@
+import { config } from "../package.json";
 import { SyncEngine } from "./modules/sync-engine";
-import { getPref, setPref } from "./modules/sync-state";
+import { getPref, setPref } from "./utils/prefs";
+import { initLocale, getString } from "./utils/locale";
+import { createZToolkit } from "./utils/ztoolkit";
+import { registerPrefsScripts } from "./modules/preferences";
 
 let syncEngine: SyncEngine | null = null;
 let notifierID: string | false = false;
 
-export function onStartup(): void {
-  Zotero.log("[miscite] Plugin started");
+async function onStartup() {
+  await Promise.all([
+    Zotero.initializationPromise,
+    Zotero.unlockPromise,
+    Zotero.uiReadyPromise,
+  ]);
+
+  initLocale();
+
   syncEngine = new SyncEngine();
 
   // Register notifier to track deletions
@@ -17,7 +28,10 @@ export function onStartup(): void {
         ids: (string | number)[],
         _extraData: Record<string, unknown>,
       ) {
-        if (event === "delete" && (type === "item" || type === "collection")) {
+        if (
+          event === "delete" &&
+          (type === "item" || type === "collection")
+        ) {
           const groupLibraryId = getPref("groupLibraryId") as number;
           if (!groupLibraryId) return;
           const deleteQueue = JSON.parse(
@@ -35,17 +49,30 @@ export function onStartup(): void {
   );
 
   _setupAutoSync();
-  Zotero.MisciteConnector.data.initialized = true;
+
+  await Promise.all(
+    Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
+  );
+
+  addon.data.initialized = true;
 }
 
-export function onMainWindowLoad(window: Window): void {
-  const doc = window.document;
+async function onMainWindowLoad(
+  win: _ZoteroTypes.MainWindow,
+): Promise<void> {
+  addon.data.ztoolkit = createZToolkit();
 
+  win.MozXULElement.insertFTLIfNeeded(
+    `${config.addonRef}-addon.ftl`,
+  );
+
+  // Add sync toolbar button
+  const doc = win.document;
   const toolbarButton = doc.createXULElement("toolbarbutton");
   toolbarButton.id = "miscite-sync-button";
   toolbarButton.setAttribute("class", "zotero-tb-button");
-  toolbarButton.setAttribute("tooltiptext", "Sync with miscite");
-  toolbarButton.setAttribute("label", "miscite Sync");
+  toolbarButton.setAttribute("tooltiptext", getString("sync-button-tooltip"));
+  toolbarButton.setAttribute("label", getString("sync-button-label"));
   toolbarButton.addEventListener("command", () => {
     _triggerSync();
   });
@@ -56,23 +83,38 @@ export function onMainWindowLoad(window: Window): void {
   }
 }
 
-export function onMainWindowUnload(_window: Window): void {
-  // Cleanup handled by shutdown
+async function onMainWindowUnload(_win: Window): Promise<void> {
+  ztoolkit.unregisterAll();
 }
 
-export function onShutdown(): void {
-  Zotero.log("[miscite] Plugin shutting down");
+function onShutdown(): void {
+  ztoolkit.unregisterAll();
+
   if (notifierID) {
     Zotero.Notifier.unregisterObserver(notifierID);
     notifierID = false;
   }
-  const timer = Zotero.MisciteConnector?.data.syncTimer;
+
+  const timer = addon.data.syncTimer;
   if (timer) {
-    Zotero.getMainWindow()!.clearInterval(timer);
-    Zotero.MisciteConnector.data.syncTimer = null;
+    Zotero.getMainWindow()?.clearInterval(timer);
+    addon.data.syncTimer = null;
   }
+
   syncEngine = null;
-  Zotero.MisciteConnector.data.alive = false;
+  addon.data.alive = false;
+  // @ts-expect-error - Plugin instance is not typed
+  delete Zotero[config.addonInstance];
+}
+
+async function onPrefsEvent(type: string, data: { [key: string]: any }) {
+  switch (type) {
+    case "load":
+      registerPrefsScripts(data.window);
+      break;
+    default:
+      return;
+  }
 }
 
 function _setupAutoSync(): void {
@@ -89,30 +131,54 @@ function _setupAutoSync(): void {
     },
     intervalMin * 60 * 1000,
   );
-  Zotero.MisciteConnector.data.syncTimer = timer;
+  addon.data.syncTimer = timer;
 }
 
 async function _triggerSync(): Promise<void> {
   if (!syncEngine) return;
   try {
-    Zotero.log("[miscite] Starting sync...");
+    ztoolkit.log("Starting sync...");
     const result = await syncEngine.sync();
-    Zotero.log(
-      `[miscite] Sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted`,
+    ztoolkit.log(
+      `Sync complete: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted`,
     );
-    const progressWin = new Zotero.ProgressWindow({ closeOnClick: true });
-    progressWin.changeHeadline("miscite Sync");
-    progressWin.addDescription(
-      `Synced: ${result.created} new, ${result.updated} updated, ${result.deleted} deleted`,
+    const progressWin = new ztoolkit.ProgressWindow(
+      config.addonName,
+      { closeOnClick: true },
     );
-    progressWin.show();
+    progressWin
+      .createLine({
+        text: getString("sync-complete", {
+          args: {
+            created: result.created,
+            updated: result.updated,
+            deleted: result.deleted,
+          },
+        }),
+        type: "default",
+      })
+      .show();
     progressWin.startCloseTimer(4000);
   } catch (err) {
     Zotero.logError(err instanceof Error ? err : new Error(String(err)));
-    const progressWin = new Zotero.ProgressWindow({ closeOnClick: true });
-    progressWin.changeHeadline("miscite Sync Failed");
-    progressWin.addDescription(String(err));
-    progressWin.show();
+    const progressWin = new ztoolkit.ProgressWindow(
+      config.addonName,
+      { closeOnClick: true },
+    );
+    progressWin
+      .createLine({
+        text: getString("sync-failed", { args: { error: String(err) } }),
+        type: "default",
+      })
+      .show();
     progressWin.startCloseTimer(6000);
   }
 }
+
+export default {
+  onStartup,
+  onShutdown,
+  onMainWindowLoad,
+  onMainWindowUnload,
+  onPrefsEvent,
+};

@@ -2,7 +2,9 @@
   "manifest_version": 2,
   "name": "__addonName__",
   "version": "__buildVersion__",
-  "description": "Two-way sync between miscite and Zotero",
+  "description": "__description__",
+  "homepage_url": "__homepage__",
+  "author": "__author__",
   "icons": {},
   "applications": {
     "zotero": {

@@ -1,7 +1,7 @@
 /**
  * Find or create the "miscite.review" Zotero Group Library.
  */
-import { getPref, setPref } from "./sync-state";
+import { getPref, setPref } from "../utils/prefs";
 import { log } from "./utils";
 
 const GROUP_NAME = "miscite.review";

@@ -111,7 +111,7 @@ export class SyncEngine {
 
     while (hasMore) {
       const sinceParam = since || undefined;
-      const response = await api.listItems(sinceParam);
+      const response = await api.listItems(sinceParam, offset);
       hasMore = response.has_more;
 
       for (const mi of response.data) {
@@ -146,7 +146,11 @@ export class SyncEngine {
           }
 
           // Sync collection memberships
-          await this._syncItemCollections(mi, itemKeyMap[mapKey] as string, libraryID);
+          await this._syncItemCollections(
+            mi,
+            itemKeyMap[mapKey] as string,
+            libraryID,
+          );
         } catch (err) {
           log(`Failed to pull item ${mi.id} "${mi.title}": ${err}`);
         }
@@ -230,7 +234,10 @@ export class SyncEngine {
     for (const entry of deleteQueue) {
       try {
         if (entry.type === "item") {
-          // Find the miscite ID for this Zotero key
+          // The delete notifier gives us a Zotero item ID (numeric).
+          // We need to find which miscite ID maps to a Zotero key that
+          // corresponds to this deleted item. Since the item is deleted,
+          // we search the keymap for any entry whose value matches.
           let misciteId: number | null = null;
           for (const [k, v] of Object.entries(itemKeyMap)) {
             if (String(v) === entry.id && k.startsWith("m")) {
@@ -274,7 +281,9 @@ export class SyncEngine {
     libraryID: number,
   ): Promise<Zotero.Item | null> {
     const data = misciteToZoteroData(mi);
-    const itemTypeID = Zotero.ItemTypes.getID(data.itemType as string) || Zotero.ItemTypes.getID("journalArticle");
+    const itemTypeID =
+      Zotero.ItemTypes.getID(data.itemType as string) ||
+      Zotero.ItemTypes.getID("journalArticle");
     const item = new Zotero.Item();
     (item as unknown as Record<string, unknown>).libraryID = libraryID;
     (item as unknown as Record<string, unknown>).itemTypeID = itemTypeID;
@@ -291,7 +300,9 @@ export class SyncEngine {
 
     // Set creators
     if (Array.isArray(data.creators)) {
-      item.setCreators(data.creators as Parameters<Zotero.Item["setCreators"]>[0]);
+      item.setCreators(
+        data.creators as Parameters<Zotero.Item["setCreators"]>[0],
+      );
     }
 
     await item.saveTx();
@@ -325,7 +336,9 @@ export class SyncEngine {
     }
 
     if (Array.isArray(data.creators)) {
-      zItem.setCreators(data.creators as Parameters<Zotero.Item["setCreators"]>[0]);
+      zItem.setCreators(
+        data.creators as Parameters<Zotero.Item["setCreators"]>[0],
+      );
     }
 
     await zItem.saveTx();

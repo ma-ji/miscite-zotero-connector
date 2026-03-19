@@ -1,0 +1,9 @@
+pref-title = miscite Connector Settings
+pref-server-url = Server URL
+pref-api-token = API Token
+pref-test-connection =
+    .label = Test Connection
+pref-auto-sync-enabled =
+    .label = Enable automatic sync
+pref-auto-sync-interval = Sync interval (minutes)
+pref-help = { $name } v{ $version }, built { $time }

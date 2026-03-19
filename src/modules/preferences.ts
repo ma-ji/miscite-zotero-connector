@@ -1,27 +1,43 @@
-/**
- * Preferences pane logic — handles test connection button and UI events.
- */
 import { MisciteApiClient } from "./miscite-api";
-import { log } from "./utils";
+import { getString } from "../utils/locale";
+import { config } from "../../package.json";
 
-export async function onTestConnection(): Promise<void> {
+export function registerPrefsScripts(win: Window): void {
+  const doc = win.document;
+
+  // Wire up test connection button
+  const testBtn = doc.getElementById(
+    `zotero-prefpane-${config.addonRef}-test-connection`,
+  );
+  if (testBtn) {
+    testBtn.addEventListener("command", () => {
+      onTestConnection();
+    });
+  }
+}
+
+async function onTestConnection(): Promise<void> {
   try {
     const api = new MisciteApiClient();
     const result = await api.testConnection();
-    log(`Connection successful: ${result.email}`);
+    ztoolkit.log(`Connection successful: ${result.email}`);
 
     Services.prompt.alert(
       Services.wm.getMostRecentWindow("navigator:browser"),
-      "miscite Connection",
-      `Connected successfully!\n\nUser: ${result.email}`,
+      getString("connection-success-title"),
+      getString("connection-success-message", {
+        args: { email: result.email },
+      }),
     );
   } catch (err) {
-    log(`Connection test failed: ${err}`);
+    ztoolkit.log(`Connection test failed: ${err}`);
 
     Services.prompt.alert(
       Services.wm.getMostRecentWindow("navigator:browser"),
-      "miscite Connection Failed",
-      `Could not connect to miscite server.\n\n${String(err)}`,
+      getString("connection-failed-title"),
+      getString("connection-failed-message", {
+        args: { error: String(err) },
+      }),
     );
   }
 }

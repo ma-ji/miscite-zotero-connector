@@ -1,15 +1,6 @@
-const PREF_PREFIX = "extensions.miscite-connector";
+import { getPref, setPref } from "../utils/prefs";
 
-export function getPref(key: string): string | number | boolean {
-  return Zotero.Prefs.get(`${PREF_PREFIX}.${key}`, true) as
-    | string
-    | number
-    | boolean;
-}
-
-export function setPref(key: string, value: string | number | boolean): void {
-  Zotero.Prefs.set(`${PREF_PREFIX}.${key}`, value, true);
-}
+export { getPref, setPref };
 
 export interface KeyMap {
   [key: string]: string | number;

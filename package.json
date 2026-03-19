@@ -1,10 +1,17 @@
 {
   "name": "miscite-zotero-connector",
+  "type": "module",
   "version": "0.1.0",
   "description": "Two-way sync between miscite and Zotero",
+  "author": "miscite",
+  "homepage": "https://github.com/ma-ji/miscite-zotero-connector#readme",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ma-ji/miscite-zotero-connector.git"
+    "url": "git+https://github.com/ma-ji/miscite-zotero-connector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ma-ji/miscite-zotero-connector/issues"
   },
   "config": {
     "addonName": "Miscite Connector",
@@ -15,19 +22,36 @@
   },
   "scripts": {
     "start": "zotero-plugin serve",
-    "build": "tsc --noEmit && zotero-plugin build",
+    "build": "zotero-plugin build && tsc --noEmit",
     "release": "zotero-plugin release",
-    "lint": "eslint src --fix",
-    "lint:check": "eslint src"
+    "lint:check": "prettier --check . && eslint .",
+    "lint:fix": "prettier --write . && eslint . --fix",
+    "test": "zotero-plugin test"
   },
   "dependencies": {
     "zotero-plugin-toolkit": "^5.1.0"
   },
   "devDependencies": {
+    "@zotero-plugin/eslint-config": "^0.6.7",
+    "eslint": "^9.39.0",
+    "prettier": "^3.3.0",
     "typescript": "^5.9.3",
     "zotero-plugin-scaffold": "^0.8.2",
-    "zotero-types": "^4.1.0",
-    "eslint": "^9.39.0",
-    "prettier": "^3.3.0"
+    "zotero-types": "^4.1.0"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf",
+    "overrides": [
+      {
+        "files": [
+          "*.xhtml"
+        ],
+        "options": {
+          "htmlWhitespaceSensitivity": "css"
+        }
+      }
+    ]
   }
 }

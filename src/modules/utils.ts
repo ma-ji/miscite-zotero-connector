@@ -1,13 +1,10 @@
-import { ZoteroToolkit } from "zotero-plugin-toolkit";
-
-export function createZToolkit(): ZoteroToolkit {
-  return new ZoteroToolkit();
-}
+// Re-export from centralized utilities for backward compatibility
+export { createZToolkit } from "../utils/ztoolkit";
 
 export function log(...args: unknown[]): void {
-  Zotero.log(`[miscite] ${args.map(String).join(" ")}`);
+  ztoolkit.log(...args);
 }
 
 export function logError(...args: unknown[]): void {
-  Zotero.logError(new Error(`[miscite] ${args.map(String).join(" ")}`));
+  Zotero.logError(new Error(`[${addon.data.config.addonName}] ${args.map(String).join(" ")}`));
 }

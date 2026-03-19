@@ -9,6 +9,16 @@ on:
       - main
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run lint:check
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +28,8 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run build
-      - name: Upload .xpi artifact
+      - name: Upload build result
         uses: actions/upload-artifact@v4
         with:
-          name: miscite-zotero-connector
-          path: .scaffold/build/*.xpi
+          name: build-result
+          path: .scaffold/build

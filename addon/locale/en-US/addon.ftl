@@ -1,0 +1,9 @@
+sync-button-label = miscite Sync
+sync-button-tooltip = Synchronize with miscite.review
+sync-complete = Synced: { $created } new, { $updated } updated, { $deleted } deleted
+sync-failed = Sync failed: { $error }
+connection-success-title = miscite Connection
+connection-success-message = Connected successfully! User: { $email }
+connection-failed-title = miscite Connection Failed
+connection-failed-message = Could not connect to miscite server. { $error }
+prefs-title = miscite Connector
