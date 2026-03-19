@@ -23,7 +23,6 @@
     "typescript": "^5.9.3",
     "zotero-plugin-scaffold": "^0.1.8",
     "zotero-types": "^2.4.0",
-    "@anthropic-ai/eslint-config": "^1.0.0",
     "eslint": "^9.39.0",
     "prettier": "^3.3.0"
   }
