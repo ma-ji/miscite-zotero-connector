@@ -3,8 +3,7 @@
  */
 import { MisciteApiClient, type MisciteItem } from "./miscite-api";
 import { misciteToZoteroData, zoteroToMisciteData } from "./field-mapper";
-import { ensureZoteroCollection } from "./collection-mapper";
-import { getGroupLibraryID } from "./group-library";
+import { getGroupLibraryID, getRootCollectionID } from "./group-library";
 import { pullFiles, pushFiles } from "./file-sync";
 import {
   getPref,
@@ -72,13 +71,21 @@ export class SyncEngine {
   ): Promise<void> {
     const response = await api.listCollections(since || undefined);
     const collectionKeyMap = getKeyMap("collectionKeyMap");
+    const rootColId = await getRootCollectionID();
 
     for (const mc of response.data) {
       const mapKey = `m${mc.id}`;
       if (collectionKeyMap[mapKey]) continue; // Already mapped
 
       try {
-        const colId = await ensureZoteroCollection(libraryID, mc.name);
+        // Create sub-collections under the miscite root collection
+        const rootCol = Zotero.Collections.get(rootColId);
+        const parentKey = rootCol ? rootCol.key : false;
+        const colId = await this._ensureChildCollection(
+          libraryID,
+          mc.name,
+          parentKey,
+        );
         if (colId) {
           collectionKeyMap[mapKey] = colId;
         }
@@ -88,6 +95,33 @@ export class SyncEngine {
     }
 
     setKeyMap("collectionKeyMap", collectionKeyMap);
+  }
+
+  private async _ensureChildCollection(
+    libraryID: number,
+    name: string,
+    parentKey: string | false,
+  ): Promise<number> {
+    // Search for existing collection with this name under the parent
+    const collections = Zotero.Collections.getByLibrary(libraryID);
+    for (const col of collections) {
+      if (
+        col.name === name &&
+        (parentKey === false ? !col.parentKey : col.parentKey === parentKey)
+      ) {
+        return col.id;
+      }
+    }
+
+    // Create new collection under the parent
+    const col = new Zotero.Collection();
+    (col as unknown as Record<string, unknown>).libraryID = libraryID;
+    col.name = name;
+    if (parentKey) {
+      col.parentKey = parentKey;
+    }
+    await col.saveTx();
+    return col.id;
   }
 
   private async _pullItems(
@@ -126,14 +160,35 @@ export class SyncEngine {
               }
             }
           } else {
-            // Create new Zotero item
-            const zItem = await this._createZoteroItem(mi, libraryID);
-            if (zItem) {
-              itemKeyMap[mapKey] = zItem.key;
-              created++;
+            // Check for existing duplicate by DOI or title
+            const existing = await this._findExistingItem(mi, libraryID);
+            if (existing) {
+              // Link to the existing item instead of creating a duplicate
+              itemKeyMap[mapKey] = existing.key;
+              log(
+                `Linked miscite item ${mi.id} to existing` +
+                  ` Zotero item "${mi.title}" (${existing.key})`,
+              );
 
-              // Sync files for new item
-              await pullFiles(api, mi.id, zItem, libraryID);
+              // Add to miscite root collection if not already there
+              const rootColId = await getRootCollectionID();
+              if (rootColId) {
+                const rootCol = Zotero.Collections.get(rootColId);
+                if (rootCol && !rootCol.hasItem(existing.id)) {
+                  rootCol.addItem(existing.id);
+                  await rootCol.saveTx();
+                }
+              }
+            } else {
+              // Create new Zotero item
+              const zItem = await this._createZoteroItem(mi, libraryID);
+              if (zItem) {
+                itemKeyMap[mapKey] = zItem.key;
+                created++;
+
+                // Sync files for new item
+                await pullFiles(api, mi.id, zItem, libraryID);
+              }
             }
           }
 
@@ -173,8 +228,15 @@ export class SyncEngine {
       }
     }
 
-    // Get all items in the group library
-    const items = await Zotero.Items.getAll(libraryID);
+    // Get items in the miscite root collection only
+    const rootColId = await getRootCollectionID();
+    const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
+    if (!rootCol) return { created, updated };
+
+    const itemIDs = rootCol.getChildItems(true);
+    const items = itemIDs
+      .map((id: number) => Zotero.Items.get(id))
+      .filter(Boolean);
     const sinceDate = since ? new Date(since) : new Date(0);
 
     for (const zItem of items) {
@@ -268,6 +330,28 @@ export class SyncEngine {
     return deleted;
   }
 
+  /**
+   * Find an existing Zotero item matching a miscite item by DOI.
+   * Returns null if no DOI or no match found.
+   */
+  private async _findExistingItem(
+    mi: MisciteItem,
+    libraryID: number,
+  ): Promise<Zotero.Item | null> {
+    if (!mi.doi) return null;
+
+    const s = new Zotero.Search();
+    s.addCondition("libraryID", "is", String(libraryID));
+    s.addCondition("DOI", "is", mi.doi);
+    const ids = await s.search();
+    if (ids.length > 0) {
+      const item = Zotero.Items.get(ids[0]);
+      if (item && item.isRegularItem()) return item;
+    }
+
+    return null;
+  }
+
   private async _createZoteroItem(
     mi: MisciteItem,
     libraryID: number,
@@ -299,6 +383,16 @@ export class SyncEngine {
 
     await item.saveTx();
     log(`Created Zotero item: "${mi.title}" -> ${item.key}`);
+
+    // Add item to the root miscite collection
+    const rootColId = await getRootCollectionID();
+    if (rootColId) {
+      const rootCol = Zotero.Collections.get(rootColId);
+      if (rootCol && !rootCol.hasItem(item.id)) {
+        rootCol.addItem(item.id);
+        await rootCol.saveTx();
+      }
+    }
 
     // Add note if miscite item has notes
     if (mi.notes) {

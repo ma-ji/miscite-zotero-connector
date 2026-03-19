@@ -36,19 +36,38 @@ async function onStartup() {
         _extraData: Record<string, unknown>,
       ) {
         if (event === "delete" && (type === "item" || type === "collection")) {
-          const groupLibraryId = getPref("groupLibraryId") as number;
-          if (!groupLibraryId) return;
+          // Only queue deletes for items/collections we track
+          const itemKeyMap = JSON.parse(
+            (getPref("itemKeyMap") as string) || "{}",
+          );
+          const collectionKeyMap = JSON.parse(
+            (getPref("collectionKeyMap") as string) || "{}",
+          );
+          const keyMap = type === "item" ? itemKeyMap : collectionKeyMap;
+
+          // Check if any deleted ID is in our key map
           const deleteQueue = JSON.parse(
             (getPref("deleteQueue") as string) || "[]",
           );
+          let changed = false;
           for (const id of ids) {
-            deleteQueue.push({
-              type,
-              id: String(id),
-              ts: Date.now(),
-            });
+            const idStr = String(id);
+            // Only queue if this ID is a value in our map
+            const isTracked = Object.values(keyMap).some(
+              (v: unknown) => String(v) === idStr,
+            );
+            if (isTracked) {
+              deleteQueue.push({
+                type,
+                id: idStr,
+                ts: Date.now(),
+              });
+              changed = true;
+            }
           }
-          setPref("deleteQueue", JSON.stringify(deleteQueue));
+          if (changed) {
+            setPref("deleteQueue", JSON.stringify(deleteQueue));
+          }
         }
       },
     },
