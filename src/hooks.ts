@@ -7,6 +7,7 @@ import { registerPrefsScripts } from "./modules/preferences";
 
 let syncEngine: SyncEngine | null = null;
 let notifierID: string | false = false;
+let syncInProgress = false;
 
 async function onStartup() {
   await Promise.all([
@@ -36,30 +37,43 @@ async function onStartup() {
         _extraData: Record<string, unknown>,
       ) {
         if (event === "delete" && (type === "item" || type === "collection")) {
-          // Only queue deletes for items/collections we track
-          const itemKeyMap = JSON.parse(
-            (getPref("itemKeyMap") as string) || "{}",
+          // For items: extraData contains {[id]: {key}} for deleted items.
+          // For collections: Zotero passes numeric IDs which match our map values.
+          const keyMap = JSON.parse(
+            (getPref(
+              type === "item" ? "itemKeyMap" : "collectionKeyMap",
+            ) as string) || "{}",
           );
-          const collectionKeyMap = JSON.parse(
-            (getPref("collectionKeyMap") as string) || "{}",
-          );
-          const keyMap = type === "item" ? itemKeyMap : collectionKeyMap;
-
-          // Check if any deleted ID is in our key map
           const deleteQueue = JSON.parse(
             (getPref("deleteQueue") as string) || "[]",
           );
+          // Build reverse: value -> miscite map key
+          const reverseByValue: Record<string, string> = {};
+          for (const [mk, v] of Object.entries(keyMap)) {
+            reverseByValue[String(v)] = mk;
+          }
+
           let changed = false;
           for (const id of ids) {
-            const idStr = String(id);
-            // Only queue if this ID is a value in our map
-            const isTracked = Object.values(keyMap).some(
-              (v: unknown) => String(v) === idStr,
-            );
-            if (isTracked) {
+            let matchKey: string | undefined;
+            if (type === "item") {
+              // Notifier gives numeric ID; extraData has the Zotero key
+              const extra = _extraData[String(id)] as
+                | { key?: string }
+                | undefined;
+              const zoteroKey = extra?.key;
+              if (zoteroKey) {
+                matchKey = reverseByValue[zoteroKey];
+              }
+            } else {
+              // Collection: numeric ID matches our map values directly
+              matchKey = reverseByValue[String(id)];
+            }
+            if (matchKey) {
               deleteQueue.push({
                 type,
-                id: idStr,
+                // Store the miscite map key (e.g. "m123") for _processDeletes
+                id: matchKey,
                 ts: Date.now(),
               });
               changed = true;
@@ -159,6 +173,11 @@ async function _resetAndSync(): Promise<void> {
 
 async function _triggerSync(): Promise<void> {
   if (!syncEngine) return;
+  if (syncInProgress) {
+    ztoolkit.log("Sync already in progress, skipping.");
+    return;
+  }
+  syncInProgress = true;
   try {
     ztoolkit.log("Starting sync...");
     const result = await syncEngine.sync();
@@ -197,6 +216,8 @@ async function _triggerSync(): Promise<void> {
       })
       .show();
     progressWin.startCloseTimer(6000);
+  } finally {
+    syncInProgress = false;
   }
 }
 

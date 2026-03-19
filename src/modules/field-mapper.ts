@@ -4,6 +4,18 @@
  */
 import type { MisciteItem } from "./miscite-api";
 
+/**
+ * Normalize a DOI to its bare identifier form (e.g. "10.1234/foo").
+ * Strips common URL prefixes like "https://doi.org/" and "http://dx.doi.org/".
+ */
+export function normalizeDoi(doi: string | null | undefined): string {
+  if (!doi) return "";
+  return doi
+    .trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+    .replace(/^doi:\s*/i, "");
+}
+
 // miscite work_type -> Zotero itemType
 const WORK_TYPE_TO_ZOTERO: Record<string, string> = {
   article: "journalArticle",
@@ -136,17 +148,13 @@ export function misciteToZoteroData(
     itemType,
     title: item.title || "",
     creators,
-    DOI: item.doi || "",
+    DOI: normalizeDoi(item.doi),
     date: item.publication_year ? String(item.publication_year) : "",
     abstractNote: item.abstract || "",
   };
 
   // Map source_display_name based on item type
-  if (
-    itemType === "journalArticle" ||
-    itemType === "preprint" ||
-    itemType === "review"
-  ) {
+  if (itemType === "journalArticle" || itemType === "preprint") {
     data.publicationTitle = item.source_display_name || "";
   } else if (itemType === "bookSection" || itemType === "conferencePaper") {
     data.proceedingsTitle = item.source_display_name || "";
@@ -173,8 +181,9 @@ export function zoteroToMisciteData(
     : "journalArticle";
   const workType = ZOTERO_TO_WORK_TYPE[itemType] || itemType;
 
-  // Extract authors
-  const creators = zoteroItem.getCreators() as Array<{
+  // Extract authors — use getCreatorsJSON() which returns
+  // objects with string creatorType (e.g. "author", "editor")
+  const creators = zoteroItem.getCreatorsJSON() as Array<{
     creatorType?: string;
     firstName?: string;
     lastName?: string;
@@ -190,23 +199,26 @@ export function zoteroToMisciteData(
     })
     .filter(Boolean);
 
-  const doi = zoteroItem.getField("DOI") as string;
+  const doi = normalizeDoi(zoteroItem.getField("DOI") as string);
   const title = zoteroItem.getField("title") as string;
   const date = zoteroItem.getField("date") as string;
   const publicationYear = date ? parseInt(date.slice(0, 4), 10) || null : null;
   const abstractNote = zoteroItem.getField("abstractNote") as string;
   const extra = (zoteroItem.getField("extra") as string) || "";
 
-  // Source display name
+  // Source display name — try each field independently since
+  // getField throws for fields not valid on this item type
   let sourceDisplayName = "";
-  try {
-    sourceDisplayName =
-      (zoteroItem.getField("publicationTitle") as string) ||
-      (zoteroItem.getField("proceedingsTitle") as string) ||
-      (zoteroItem.getField("publisher") as string) ||
-      "";
-  } catch {
-    // Field may not exist for this item type
+  for (const f of ["publicationTitle", "proceedingsTitle", "publisher"]) {
+    try {
+      const val = zoteroItem.getField(f) as string;
+      if (val) {
+        sourceDisplayName = val;
+        break;
+      }
+    } catch {
+      // Field not valid for this item type
+    }
   }
 
   // Parse metrics from extra field

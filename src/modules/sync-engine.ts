@@ -2,7 +2,11 @@
  * Core sync engine: pull from miscite, push from Zotero, handle deletes.
  */
 import { MisciteApiClient, type MisciteItem } from "./miscite-api";
-import { misciteToZoteroData, zoteroToMisciteData } from "./field-mapper";
+import {
+  misciteToZoteroData,
+  zoteroToMisciteData,
+  normalizeDoi,
+} from "./field-mapper";
 import { getLibraryID, getRootCollectionID } from "./library";
 import { pullFiles, pushFiles } from "./file-sync";
 import {
@@ -57,8 +61,14 @@ export class SyncEngine {
       log(`Pull: ${pullResult.created} created, ${pullResult.updated} updated`);
 
       // Phase 3: Push items from Zotero -> miscite
+      // Skip items that were just pulled/linked to avoid redundant updates
       log("Phase 3: Pushing items...");
-      const pushResult = await this._pushItems(api, libraryID, lastSync);
+      const pushResult = await this._pushItems(
+        api,
+        libraryID,
+        lastSync,
+        pullResult.pulledKeys,
+      );
       result.created += pushResult.created;
       result.updated += pushResult.updated;
       log(`Push: ${pushResult.created} created, ${pushResult.updated} updated`);
@@ -69,9 +79,10 @@ export class SyncEngine {
       result.deleted += deleteResult;
       log(`Deletes: ${deleteResult}`);
 
-      // Update last sync time from server
-      const timeCheck = await api.listItems();
-      setPref("lastSyncTime", timeCheck.server_time);
+      // Save server time from pull response
+      if (pullResult.serverTime) {
+        setPref("lastSyncTime", pullResult.serverTime);
+      }
     } catch (err) {
       result.errors++;
       throw err;
@@ -152,9 +163,16 @@ export class SyncEngine {
     api: MisciteApiClient,
     libraryID: number,
     since: string,
-  ): Promise<{ created: number; updated: number }> {
+  ): Promise<{
+    created: number;
+    updated: number;
+    pulledKeys: Set<string>;
+    serverTime: string;
+  }> {
     let created = 0;
     let updated = 0;
+    const pulledKeys = new Set<string>();
+    let serverTime = "";
     let hasMore = true;
     let offset = 0;
     const itemKeyMap = getKeyMap("itemKeyMap");
@@ -163,6 +181,7 @@ export class SyncEngine {
       const sinceParam = since || undefined;
       const response = await api.listItems(sinceParam, offset);
       hasMore = response.has_more;
+      if (response.server_time) serverTime = response.server_time;
       log(
         `API returned ${response.data.length} items` +
           ` (offset=${offset}, has_more=${hasMore})`,
@@ -175,6 +194,7 @@ export class SyncEngine {
 
           if (existingKey) {
             // Update existing Zotero item
+            pulledKeys.add(existingKey);
             const zItem = Zotero.Items.getByLibraryAndKey(
               libraryID,
               existingKey,
@@ -184,6 +204,7 @@ export class SyncEngine {
               const zoteroDate = new Date(zItem.dateModified);
               if (serverDate > zoteroDate) {
                 await this._updateZoteroItem(zItem, mi);
+                await pullFiles(api, mi.id, zItem, libraryID);
                 updated++;
               }
             }
@@ -193,6 +214,7 @@ export class SyncEngine {
             if (existing) {
               // Link to the existing item instead of creating a duplicate
               itemKeyMap[mapKey] = existing.key;
+              pulledKeys.add(existing.key);
               log(
                 `Linked miscite item ${mi.id} to existing` +
                   ` Zotero item "${mi.title}" (${existing.key})`,
@@ -212,6 +234,7 @@ export class SyncEngine {
               const zItem = await this._createZoteroItem(mi, libraryID);
               if (zItem) {
                 itemKeyMap[mapKey] = zItem.key;
+                pulledKeys.add(zItem.key);
                 created++;
 
                 // Sync files for new item
@@ -220,12 +243,11 @@ export class SyncEngine {
             }
           }
 
-          // Sync collection memberships
-          await this._syncItemCollections(
-            mi,
-            itemKeyMap[mapKey] as string,
-            libraryID,
-          );
+          // Sync collection memberships (skip if item wasn't mapped)
+          const mappedKey = itemKeyMap[mapKey] as string | undefined;
+          if (mappedKey) {
+            await this._syncItemCollections(mi, mappedKey, libraryID);
+          }
         } catch (err) {
           log(`Failed to pull item ${mi.id} "${mi.title}": ${err}`);
         }
@@ -236,13 +258,14 @@ export class SyncEngine {
     }
 
     setKeyMap("itemKeyMap", itemKeyMap);
-    return { created, updated };
+    return { created, updated, pulledKeys, serverTime };
   }
 
   private async _pushItems(
     api: MisciteApiClient,
     libraryID: number,
     since: string,
+    skipKeys?: Set<string>,
   ): Promise<{ created: number; updated: number }> {
     let created = 0;
     let updated = 0;
@@ -269,6 +292,8 @@ export class SyncEngine {
 
     for (const zItem of items) {
       if (!zItem.isRegularItem()) continue;
+      // Skip items just pulled/linked from server in this sync cycle
+      if (skipKeys?.has(zItem.key)) continue;
 
       const modified = new Date(zItem.dateModified);
       if (modified <= sinceDate) continue;
@@ -312,49 +337,39 @@ export class SyncEngine {
 
     const itemKeyMap = getKeyMap("itemKeyMap");
     let deleted = 0;
+    const failedEntries: typeof deleteQueue = [];
 
     for (const entry of deleteQueue) {
       try {
+        // entry.id is now the miscite map key (e.g. "m123")
+        const mapKey = entry.id;
+        if (!mapKey || !mapKey.startsWith("m")) continue;
+        const misciteId = parseInt(mapKey.slice(1), 10);
+        if (!misciteId) continue;
+
         if (entry.type === "item") {
-          // The delete notifier gives us a Zotero item ID (numeric).
-          // We need to find which miscite ID maps to a Zotero key that
-          // corresponds to this deleted item. Since the item is deleted,
-          // we search the keymap for any entry whose value matches.
-          let misciteId: number | null = null;
-          for (const [k, v] of Object.entries(itemKeyMap)) {
-            if (String(v) === entry.id && k.startsWith("m")) {
-              misciteId = parseInt(k.slice(1), 10);
-              delete itemKeyMap[k];
-              break;
-            }
-          }
-          if (misciteId) {
-            await api.deleteItem(misciteId);
-            deleted++;
-          }
+          await api.deleteItem(misciteId);
+          delete itemKeyMap[mapKey];
+          deleted++;
         } else if (entry.type === "collection") {
           const collectionKeyMap = getKeyMap("collectionKeyMap");
-          let misciteId: number | null = null;
-          for (const [k, v] of Object.entries(collectionKeyMap)) {
-            if (String(v) === entry.id && k.startsWith("m")) {
-              misciteId = parseInt(k.slice(1), 10);
-              delete collectionKeyMap[k];
-              break;
-            }
-          }
-          if (misciteId) {
-            await api.deleteCollection(misciteId);
-            deleted++;
-          }
+          await api.deleteCollection(misciteId);
+          delete collectionKeyMap[mapKey];
           setKeyMap("collectionKeyMap", collectionKeyMap);
+          deleted++;
         }
       } catch (err) {
         log(`Failed to process delete for ${entry.type} ${entry.id}: ${err}`);
+        failedEntries.push(entry);
       }
     }
 
     setKeyMap("itemKeyMap", itemKeyMap);
+    // Re-queue failed entries for retry on next sync
     clearDeleteQueue();
+    if (failedEntries.length > 0) {
+      setPref("deleteQueue", JSON.stringify(failedEntries));
+    }
     return deleted;
   }
 
@@ -366,22 +381,28 @@ export class SyncEngine {
     mi: MisciteItem,
     libraryID: number,
   ): Promise<Zotero.Item | null> {
-    if (!mi.doi) return null;
+    const bareDoi = normalizeDoi(mi.doi);
+    if (!bareDoi) return null;
 
-    try {
-      const s = new Zotero.Search();
-      s.addCondition("libraryID", "is", String(libraryID));
-      s.addCondition("DOI", "is", mi.doi);
-      const ids = await s.search();
-      for (const id of ids) {
-        const item = Zotero.Items.get(id);
-        if (!item || !item.isRegularItem()) continue;
-        // Skip items in trash
-        if (item.deleted) continue;
-        return item;
+    // Search for both bare DOI and URL form since Zotero items
+    // may store either format
+    const doiVariants = [bareDoi, `https://doi.org/${bareDoi}`];
+
+    for (const doi of doiVariants) {
+      try {
+        const s = new Zotero.Search();
+        s.addCondition("libraryID", "is", String(libraryID));
+        s.addCondition("DOI", "is", doi);
+        const ids = await s.search();
+        for (const id of ids) {
+          const item = Zotero.Items.get(id);
+          if (!item || !item.isRegularItem()) continue;
+          if (item.deleted) continue;
+          return item;
+        }
+      } catch (err) {
+        log(`DOI search failed for "${doi}": ${err}`);
       }
-    } catch (err) {
-      log(`DOI search failed for "${mi.doi}": ${err}`);
     }
 
     return null;
@@ -448,6 +469,17 @@ export class SyncEngine {
 
     for (const [field, value] of Object.entries(data)) {
       if (field === "itemType" || field === "creators") continue;
+      // Preserve user content in the Extra field — merge rather than replace
+      if (field === "extra" && value) {
+        const existing = (zItem.getField("extra") as string) || "";
+        const merged = this._mergeExtraField(existing, value as string);
+        try {
+          zItem.setField("extra", merged);
+        } catch {
+          // Field may not be valid
+        }
+        continue;
+      }
       try {
         zItem.setField(field, value as string);
       } catch {
@@ -463,6 +495,27 @@ export class SyncEngine {
 
     await zItem.saveTx();
     log(`Updated Zotero item: "${mi.title}"`);
+  }
+
+  /**
+   * Merge citation metrics into existing Extra field content,
+   * preserving any user-added lines.
+   */
+  private _mergeExtraField(existing: string, incoming: string): string {
+    // Remove old metric lines from existing content
+    const userLines = existing
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        if (/^\d+\s+citations\s+\(OpenAlex/i.test(t)) return false;
+        if (/^FWCI:/i.test(t)) return false;
+        return true;
+      })
+      .filter((line) => line.trim());
+
+    const metricLines = incoming.split("\n").filter((line) => line.trim());
+    const all = [...metricLines, ...userLines];
+    return all.join("\n");
   }
 
   private async _syncItemCollections(

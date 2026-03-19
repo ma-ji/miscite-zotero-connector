@@ -21,26 +21,9 @@ export async function pullFiles(
   const remoteFiles = response.data;
   let downloaded = 0;
 
-  // Get existing attachment hashes for dedup
-  const existingHashes = new Set<string>();
-  const attachmentIDs = zoteroItem.getAttachments();
-  for (const attId of attachmentIDs) {
-    const att = Zotero.Items.get(attId);
-    if (att) {
-      const hash = String(att.attachmentHash || "");
-      if (hash) existingHashes.add(hash);
-    }
-  }
-
   for (const rf of remoteFiles) {
     const mapKey = `m${rf.id}`;
     if (fileKeyMap[mapKey]) continue; // Already synced
-
-    // Check sha256 dedup
-    if (rf.sha256 && existingHashes.has(rf.sha256)) {
-      fileKeyMap[mapKey] = "dedup";
-      continue;
-    }
 
     try {
       const data = await api.downloadFile(rf.id);

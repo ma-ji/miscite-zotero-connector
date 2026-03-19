@@ -73,19 +73,13 @@ export class MisciteApiClient {
       headers["Content-Type"] = "application/json";
     }
 
+    // Zotero.HTTP.request throws on non-2xx status codes
     const response = await Zotero.HTTP.request(method, url, {
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       responseType: (options?.responseType ??
         "json") as XMLHttpRequestResponseType,
     });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(
-        `miscite API error ${response.status}: ` +
-          String(response.responseText || "").slice(0, 200),
-      );
-    }
     return response.response as T;
   }
 
@@ -177,9 +171,6 @@ export class MisciteApiClient {
       },
       responseType: "arraybuffer",
     });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`File download failed: ${response.status}`);
-    }
     return new Uint8Array(response.response as ArrayBuffer);
   }
 
@@ -210,21 +201,16 @@ export class MisciteApiClient {
     body.set(data, headerBytes.length);
     body.set(footerBytes, headerBytes.length + data.length);
 
+    // Pass the raw ArrayBuffer to Zotero.HTTP.request so binary
+    // content is not corrupted by string encoding
     const response = await Zotero.HTTP.request("POST", url, {
       headers: {
         Authorization: `Bearer ${this.token}`,
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
       },
-      body: body as unknown as string,
+      body: body.buffer as unknown as string,
       responseType: "json",
     });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(
-        `File upload failed: ${response.status} ` +
-          String(response.responseText || "").slice(0, 200),
-      );
-    }
     return response.response as ApiEnvelope<MisciteFile>;
   }
 
