@@ -70,20 +70,19 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-addon.ftl`);
 
-  // Add sync toolbar button
+  // Add "Sync with miscite" under Tools menu
   const doc = win.document;
-  const toolbarButton = doc.createXULElement("toolbarbutton");
-  toolbarButton.id = "miscite-sync-button";
-  toolbarButton.setAttribute("class", "zotero-tb-button");
-  toolbarButton.setAttribute("tooltiptext", getString("sync-button-tooltip"));
-  toolbarButton.setAttribute("label", getString("sync-button-label"));
-  toolbarButton.addEventListener("command", () => {
-    _triggerSync();
-  });
+  const menuTools = doc.getElementById("menu_ToolsPopup");
+  if (menuTools) {
+    const separator = doc.createXULElement("menuseparator");
+    separator.id = "miscite-sync-separator";
+    menuTools.appendChild(separator);
 
-  const toolbar = doc.getElementById("zotero-items-toolbar");
-  if (toolbar) {
-    toolbar.appendChild(toolbarButton);
+    const menuItem = doc.createXULElement("menuitem");
+    menuItem.id = "miscite-sync-menuitem";
+    menuItem.setAttribute("label", getString("sync-button-label"));
+    menuItem.addEventListener("command", () => _triggerSync());
+    menuTools.appendChild(menuItem);
   }
 }
 
