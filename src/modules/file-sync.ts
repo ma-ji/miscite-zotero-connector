@@ -73,7 +73,13 @@ async function _getLocalAttachments(
     if (!filename) {
       filename = att.attachmentFilename || "";
     }
-    result.push({ id: attId, key: att.key, filename, filePath: fp, sha256: hash });
+    result.push({
+      id: attId,
+      key: att.key,
+      filename,
+      filePath: fp,
+      sha256: hash,
+    });
   }
   return result;
 }

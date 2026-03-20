@@ -221,9 +221,7 @@ function _setupAutoSync(): void {
     intervalMin * 60 * 1000,
   );
   addon.data.syncTimer = timer;
-  ztoolkit.log(
-    `Auto sync enabled: every ${intervalMin} minutes`,
-  );
+  ztoolkit.log(`Auto sync enabled: every ${intervalMin} minutes`);
 }
 
 async function _resetAndSync(): Promise<void> {

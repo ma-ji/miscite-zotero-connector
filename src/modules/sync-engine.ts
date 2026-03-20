@@ -476,10 +476,7 @@ export class SyncEngine {
 
           let trashed = false;
           try {
-            const zItem = Zotero.Items.getByLibraryAndKey(
-              libraryID,
-              zoteroKey,
-            );
+            const zItem = Zotero.Items.getByLibraryAndKey(libraryID, zoteroKey);
             if (zItem && !zItem.deleted) {
               for (const attId of zItem.getAttachments()) {
                 const att = Zotero.Items.get(attId);
@@ -500,9 +497,7 @@ export class SyncEngine {
               trashed = true;
             }
           } catch (err) {
-            log(
-              `Failed to trash item for server item ${deletedId}: ${err}`,
-            );
+            log(`Failed to trash item for server item ${deletedId}: ${err}`);
           }
           if (trashed) {
             delete itemKeyMap[mapKey];
@@ -650,9 +645,7 @@ export class SyncEngine {
           deleted++;
           log(`Delete ${entry.type} ${entry.id}: already gone (404)`);
         } else {
-          log(
-            `Failed to process delete for ${entry.type} ${entry.id}: ${err}`,
-          );
+          log(`Failed to process delete for ${entry.type} ${entry.id}: ${err}`);
           failedEntries.push(entry);
         }
       }
@@ -717,9 +710,7 @@ export class SyncEngine {
         if (!item || !item.isRegularItem() || item.deleted) continue;
 
         // Case-insensitive title comparison
-        const zTitle = (
-          (item.getField("title") as string) || ""
-        )
+        const zTitle = ((item.getField("title") as string) || "")
           .trim()
           .toLowerCase();
         if (zTitle !== normalizedTitle) continue;
