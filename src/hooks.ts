@@ -1,5 +1,6 @@
 import { config } from "../package.json";
 import { SyncEngine } from "./modules/sync-engine";
+import { isSuppressDeleteNotifier } from "./modules/sync-state";
 import { getPref, setPref } from "./utils/prefs";
 import { initLocale, getString } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
@@ -7,7 +8,9 @@ import { registerPrefsScripts } from "./modules/preferences";
 
 let syncEngine: SyncEngine | null = null;
 let notifierID: string | false = false;
+let prefObserverIDs: symbol[] = [];
 let syncInProgress = false;
+let consecutiveAuthFailures = 0;
 
 async function onStartup() {
   await Promise.all([
@@ -38,7 +41,8 @@ async function onStartup() {
       ) {
         if (
           (event === "delete" || event === "trash") &&
-          (type === "item" || type === "collection")
+          (type === "item" || type === "collection") &&
+          !isSuppressDeleteNotifier()
         ) {
           // For delete: extraData contains {[id]: {key}} for deleted items.
           // For trash: item still exists in DB, look up key directly.
@@ -106,11 +110,38 @@ async function onStartup() {
 
   _setupAutoSync();
 
+  // Watch for auto-sync pref changes so toggling or changing interval
+  // takes effect immediately without restarting Zotero
+  prefObserverIDs.push(
+    Zotero.Prefs.registerObserver(
+      `${config.prefsPrefix}.autoSyncEnabled`,
+      () => _setupAutoSync(),
+      true,
+    ),
+    Zotero.Prefs.registerObserver(
+      `${config.prefsPrefix}.autoSyncInterval`,
+      () => _setupAutoSync(),
+      true,
+    ),
+    Zotero.Prefs.registerObserver(
+      `${config.prefsPrefix}.apiToken`,
+      () => _setupAutoSync(),
+      true,
+    ),
+  );
+
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
 
   addon.data.initialized = true;
+
+  // Run an initial sync shortly after startup (if auto-sync is enabled
+  // and credentials are configured) so the user doesn't have to wait
+  // for the first interval to fire.
+  if (getPref("autoSyncEnabled") && getPref("apiToken")) {
+    Zotero.getMainWindow()?.setTimeout(() => _triggerSync(), 5000);
+  }
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
@@ -130,6 +161,11 @@ function onShutdown(): void {
     Zotero.Notifier.unregisterObserver(notifierID);
     notifierID = false;
   }
+
+  for (const sym of prefObserverIDs) {
+    Zotero.Prefs.unregisterObserver(sym);
+  }
+  prefObserverIDs = [];
 
   const timer = addon.data.syncTimer;
   if (timer) {
@@ -160,13 +196,24 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
 }
 
 function _setupAutoSync(): void {
+  // Clear any existing timer first so toggling/changing interval works
+  const win = Zotero.getMainWindow();
+  if (addon.data.syncTimer) {
+    win?.clearInterval(addon.data.syncTimer);
+    addon.data.syncTimer = null;
+  }
+
   const enabled = getPref("autoSyncEnabled") as boolean;
   const intervalMin = (getPref("autoSyncInterval") as number) || 15;
 
   if (!enabled) return;
 
-  const win = Zotero.getMainWindow();
+  // Reset auth-failure counter when auto-sync is (re-)enabled so the
+  // user gets a full 3 retry attempts after fixing their token.
+  consecutiveAuthFailures = 0;
+  if (!getPref("apiToken")) return; // no token → no point syncing
   if (!win) return;
+
   const timer = win.setInterval(
     () => {
       _triggerSync();
@@ -174,6 +221,9 @@ function _setupAutoSync(): void {
     intervalMin * 60 * 1000,
   );
   addon.data.syncTimer = timer;
+  ztoolkit.log(
+    `Auto sync enabled: every ${intervalMin} minutes`,
+  );
 }
 
 async function _resetAndSync(): Promise<void> {
@@ -196,6 +246,7 @@ async function _triggerSync(): Promise<void> {
   try {
     ztoolkit.log("Starting sync...");
     const result = await syncEngine.sync();
+    consecutiveAuthFailures = 0; // reset on success
     ztoolkit.log(
       `Sync complete: ${result.created} created, ` +
         `${result.updated} updated, ` +
@@ -217,8 +268,24 @@ async function _triggerSync(): Promise<void> {
       })
       .show();
     progressWin.startCloseTimer(4000);
-  } catch (err) {
+  } catch (err: any) {
     Zotero.logError(err instanceof Error ? err : new Error(String(err)));
+
+    // Detect auth failures (401/403) and disable auto-sync after 3
+    // consecutive failures to avoid spamming error popups every interval
+    const status = err?.status ?? err?.xmlhttp?.status;
+    if (status === 401 || status === 403) {
+      consecutiveAuthFailures++;
+      if (consecutiveAuthFailures >= 3) {
+        ztoolkit.log(
+          "Disabling auto-sync after repeated auth failures." +
+            " Check your API token in settings.",
+        );
+        setPref("autoSyncEnabled", false);
+        _setupAutoSync(); // clear the timer
+      }
+    }
+
     const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
       closeOnClick: true,
     });

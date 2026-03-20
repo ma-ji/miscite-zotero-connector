@@ -48,6 +48,7 @@ export interface ApiEnvelope<T> {
   data: T;
   server_time: string;
   has_more: boolean;
+  deleted_ids?: number[];
 }
 
 export class MisciteApiClient {

@@ -15,7 +15,7 @@ import {
   getKeyMap,
   setKeyMap,
   getDeleteQueue,
-  clearDeleteQueue,
+  setSuppressDeleteNotifier,
 } from "./sync-state";
 import { log } from "./utils";
 
@@ -70,7 +70,11 @@ export class SyncEngine {
       const pullResult = await this._pullItems(api, libraryID, lastSync);
       result.created += pullResult.created;
       result.updated += pullResult.updated;
-      log(`Pull: ${pullResult.created} created, ${pullResult.updated} updated`);
+      result.deleted += pullResult.deleted;
+      log(
+        `Pull: ${pullResult.created} created, ${pullResult.updated} updated` +
+          `, ${pullResult.deleted} deleted`,
+      );
 
       // Phase 3: Push items from Zotero -> miscite
       // Skip items that were just pulled/linked to avoid redundant updates
@@ -106,9 +110,12 @@ export class SyncEngine {
   private async _pullCollections(
     api: MisciteApiClient,
     libraryID: number,
-    since: string,
+    _since: string,
   ): Promise<void> {
-    const response = await api.listCollections(since || undefined);
+    // Always fetch ALL collections (ignore `since`) so we can detect
+    // server-side deletions.  The collection list is small so this is
+    // cheap.
+    const response = await api.listCollections();
     const collectionKeyMap = getKeyMap("collectionKeyMap");
     const rootColId = await getRootCollectionID();
 
@@ -117,12 +124,39 @@ export class SyncEngine {
         ` ${Object.keys(collectionKeyMap).length} in keymap`,
     );
 
+    // Build set of server collection IDs for deletion detection
+    const serverColIds = new Set<string>(
+      response.data.map((mc) => `m${mc.id}`),
+    );
+
+    // 1. Create / map new server collections locally, and update
+    //    names of already-mapped collections if renamed on server.
     for (const mc of response.data) {
       const mapKey = `m${mc.id}`;
-      if (collectionKeyMap[mapKey]) continue; // Already mapped
+      if (collectionKeyMap[mapKey]) {
+        // Already mapped — check if the local collection still exists
+        try {
+          const col = Zotero.Collections.get(
+            collectionKeyMap[mapKey] as number,
+          );
+          if (!col) {
+            // Local collection was deleted — remove stale mapping so it
+            // gets recreated below
+            delete collectionKeyMap[mapKey];
+          } else if (col.name !== mc.name) {
+            // Name changed on server — update locally
+            const oldName = col.name;
+            col.name = mc.name;
+            await col.saveTx();
+            log(`Renamed collection ${mapKey}: "${oldName}" -> "${mc.name}"`);
+          }
+        } catch (err) {
+          log(`Failed to check/rename collection ${mapKey}: ${err}`);
+        }
+        if (collectionKeyMap[mapKey]) continue; // still mapped, skip creation
+      }
 
       try {
-        // Create sub-collections under the miscite root collection
         const rootCol = Zotero.Collections.get(rootColId);
         const parentKey = rootCol ? rootCol.key : false;
         const colId = await this._ensureChildCollection(
@@ -137,6 +171,54 @@ export class SyncEngine {
       } catch (err) {
         log(`Failed to create collection "${mc.name}": ${err}`);
       }
+    }
+
+    // 2. Detect locally-mapped collections that no longer exist on the
+    //    server (i.e. deleted on miscite) and remove them locally.
+    //    Suppress the Notifier so eraseTx() doesn't queue spurious
+    //    delete entries for server-initiated removals.
+    setSuppressDeleteNotifier(true);
+    try {
+      for (const mapKey of Object.keys(collectionKeyMap)) {
+        if (serverColIds.has(mapKey)) continue; // still exists on server
+
+        const localColId = collectionKeyMap[mapKey] as number;
+        let erased = false;
+        try {
+          const col = Zotero.Collections.get(localColId);
+          if (col && !(col as any).deleted) {
+            // Move items out of the collection before deleting it so
+            // they remain in the root "miscite.review" collection.
+            const childItemIds: number[] = col.getChildItems(true);
+            if (childItemIds.length > 0 && rootColId) {
+              const rootCol = Zotero.Collections.get(rootColId);
+              if (rootCol) {
+                for (const itemId of childItemIds) {
+                  if (!rootCol.hasItem(itemId)) {
+                    rootCol.addItem(itemId);
+                  }
+                }
+                await rootCol.saveTx();
+              }
+            }
+            await col.eraseTx();
+            log(
+              `Deleted local collection ${localColId}` +
+                ` (server collection ${mapKey} was removed)`,
+            );
+            erased = true;
+          } else {
+            erased = true;
+          }
+        } catch (err) {
+          log(`Failed to delete local collection ${localColId}: ${err}`);
+        }
+        if (erased) {
+          delete collectionKeyMap[mapKey];
+        }
+      }
+    } finally {
+      setSuppressDeleteNotifier(false);
     }
 
     setKeyMap("collectionKeyMap", collectionKeyMap);
@@ -260,22 +342,29 @@ export class SyncEngine {
   ): Promise<{
     created: number;
     updated: number;
+    deleted: number;
     pulledKeys: Set<string>;
     serverTime: string;
   }> {
     let created = 0;
     let updated = 0;
+    let deleted = 0;
     const pulledKeys = new Set<string>();
     let serverTime = "";
     let hasMore = true;
     let offset = 0;
     const itemKeyMap = getKeyMap("itemKeyMap");
+    let deletedItemIds: number[] = [];
 
     while (hasMore) {
       const sinceParam = since || undefined;
       const response = await api.listItems(sinceParam, offset);
       hasMore = response.has_more;
       if (response.server_time) serverTime = response.server_time;
+      // Capture tombstone IDs from the first page
+      if (offset === 0 && response.deleted_ids?.length) {
+        deletedItemIds = response.deleted_ids;
+      }
       log(
         `API returned ${response.data.length} items` +
           ` (offset=${offset}, has_more=${hasMore})`,
@@ -309,8 +398,10 @@ export class SyncEngine {
           } else {
             // Check for existing duplicate by DOI or title
             const existing = await this._findExistingItem(mi, libraryID);
-            if (existing) {
-              // Link to the existing item instead of creating a duplicate
+            if (existing && !pulledKeys.has(existing.key)) {
+              // Link to the existing item instead of creating a duplicate.
+              // The pulledKeys guard prevents two server items with the
+              // same title+year from both mapping to the same local item.
               itemKeyMap[mapKey] = existing.key;
               pulledKeys.add(existing.key);
               log(
@@ -351,12 +442,84 @@ export class SyncEngine {
         }
       }
 
+      // Persist keymap after each page so progress is not lost on
+      // network failure during subsequent pages
+      setKeyMap("itemKeyMap", itemKeyMap);
+
       offset += response.data.length;
       if (!hasMore) break;
     }
 
+    // Process server-side deletions (tombstones).
+    // Suppress the Notifier so it doesn't queue spurious delete entries
+    // for items we're trashing on behalf of the server.
+    if (deletedItemIds.length > 0) {
+      setSuppressDeleteNotifier(true);
+      try {
+        const fileKeyMap = getKeyMap("fileKeyMap");
+        for (const deletedId of deletedItemIds) {
+          const mapKey = `m${deletedId}`;
+          const zoteroKey = itemKeyMap[mapKey] as string | undefined;
+          if (!zoteroKey) continue;
+
+          // If this local item was just re-linked to a different server
+          // item (e.g. deleted then re-added with same DOI/title), don't
+          // trash it — just clean up the stale keymap entry.
+          if (pulledKeys.has(zoteroKey)) {
+            delete itemKeyMap[mapKey];
+            log(
+              `Skipping trash for ${mapKey}: item ${zoteroKey}` +
+                ` was re-linked to a current server item`,
+            );
+            continue;
+          }
+
+          let trashed = false;
+          try {
+            const zItem = Zotero.Items.getByLibraryAndKey(
+              libraryID,
+              zoteroKey,
+            );
+            if (zItem && !zItem.deleted) {
+              for (const attId of zItem.getAttachments()) {
+                const att = Zotero.Items.get(attId);
+                if (att) {
+                  for (const [fk, fv] of Object.entries(fileKeyMap)) {
+                    if (fv === att.key) delete fileKeyMap[fk];
+                  }
+                }
+              }
+              zItem.deleted = true;
+              await zItem.saveTx();
+              trashed = true;
+              log(
+                `Trashed item "${zItem.getField("title")}"` +
+                  ` (server item ${deletedId} was deleted)`,
+              );
+            } else {
+              trashed = true;
+            }
+          } catch (err) {
+            log(
+              `Failed to trash item for server item ${deletedId}: ${err}`,
+            );
+          }
+          if (trashed) {
+            delete itemKeyMap[mapKey];
+            deleted++;
+          }
+        }
+        setKeyMap("fileKeyMap", fileKeyMap);
+        if (deleted > 0) {
+          log(`Processed ${deleted} server-side item deletions`);
+        }
+      } finally {
+        setSuppressDeleteNotifier(false);
+      }
+    }
+
     setKeyMap("itemKeyMap", itemKeyMap);
-    return { created, updated, pulledKeys, serverTime };
+    return { created, updated, deleted, pulledKeys, serverTime };
   }
 
   private async _pushItems(
@@ -477,51 +640,107 @@ export class SyncEngine {
               ` (server copy preserved)`,
           );
         }
-      } catch (err) {
-        log(`Failed to process delete for ${entry.type} ${entry.id}: ${err}`);
-        failedEntries.push(entry);
+      } catch (err: any) {
+        // Treat 404 as success — the item/collection is already gone
+        const status = err?.status ?? err?.xmlhttp?.status;
+        if (status === 404) {
+          if (entry.type === "item") {
+            delete itemKeyMap[entry.id];
+          }
+          deleted++;
+          log(`Delete ${entry.type} ${entry.id}: already gone (404)`);
+        } else {
+          log(
+            `Failed to process delete for ${entry.type} ${entry.id}: ${err}`,
+          );
+          failedEntries.push(entry);
+        }
       }
     }
 
     setKeyMap("itemKeyMap", itemKeyMap);
-    // Re-queue failed entries for retry on next sync
-    clearDeleteQueue();
-    if (failedEntries.length > 0) {
-      setPref("deleteQueue", JSON.stringify(failedEntries));
-    }
+    // Replace the queue with failed entries + any entries the Notifier
+    // added while we were processing (between getDeleteQueue and now).
+    // This avoids the race where clearing the entire queue would wipe
+    // entries that the Notifier wrote during our async processing.
+    const processedIds = new Set(deleteQueue.map((e) => e.id));
+    const currentQueue = getDeleteQueue();
+    const surviving = currentQueue.filter((e) => !processedIds.has(e.id));
+    const merged = [...failedEntries, ...surviving];
+    setPref("deleteQueue", JSON.stringify(merged));
     return deleted;
   }
 
   /**
-   * Find an existing Zotero item matching a miscite item by DOI.
-   * Returns null if no DOI or no match found.
+   * Find an existing Zotero item matching a miscite item.
+   * Tries DOI first, then falls back to title + publication year.
    */
   private async _findExistingItem(
     mi: MisciteItem,
     libraryID: number,
   ): Promise<Zotero.Item | null> {
+    // 1. Try DOI match
     const bareDoi = normalizeDoi(mi.doi);
-    if (!bareDoi) return null;
-
-    // Search for both bare DOI and URL form since Zotero items
-    // may store either format
-    const doiVariants = [bareDoi, `https://doi.org/${bareDoi}`];
-
-    for (const doi of doiVariants) {
-      try {
-        const s = new Zotero.Search();
-        s.addCondition("libraryID", "is", String(libraryID));
-        s.addCondition("DOI", "is", doi);
-        const ids = await s.search();
-        for (const id of ids) {
-          const item = Zotero.Items.get(id);
-          if (!item || !item.isRegularItem()) continue;
-          if (item.deleted) continue;
-          return item;
+    if (bareDoi) {
+      const doiVariants = [bareDoi, `https://doi.org/${bareDoi}`];
+      for (const doi of doiVariants) {
+        try {
+          const s = new Zotero.Search();
+          s.addCondition("libraryID", "is", String(libraryID));
+          s.addCondition("DOI", "is", doi);
+          const ids = await s.search();
+          for (const id of ids) {
+            const item = Zotero.Items.get(id);
+            if (!item || !item.isRegularItem()) continue;
+            if (item.deleted) continue;
+            return item;
+          }
+        } catch (err) {
+          log(`DOI search failed for "${doi}": ${err}`);
         }
-      } catch (err) {
-        log(`DOI search failed for "${doi}": ${err}`);
       }
+    }
+
+    // 2. Fallback: title + publication year across entire library
+    const title = mi.title?.trim();
+    if (!title) return null;
+
+    try {
+      const s = new Zotero.Search();
+      s.addCondition("libraryID", "is", String(libraryID));
+      s.addCondition("title", "is", title);
+      const ids = await s.search();
+
+      const normalizedTitle = title.toLowerCase();
+      for (const id of ids) {
+        const item = Zotero.Items.get(id);
+        if (!item || !item.isRegularItem() || item.deleted) continue;
+
+        // Case-insensitive title comparison
+        const zTitle = (
+          (item.getField("title") as string) || ""
+        )
+          .trim()
+          .toLowerCase();
+        if (zTitle !== normalizedTitle) continue;
+
+        // When the server provides a year, require the Zotero item to
+        // have a matching year.  If the Zotero date is missing/unparseable,
+        // skip this candidate to avoid false positives on generic titles.
+        if (mi.publication_year != null) {
+          const zDate = (item.getField("date") as string) || "";
+          const zYear = parseInt(zDate.substring(0, 4), 10);
+          if (isNaN(zYear) || zYear !== mi.publication_year) continue;
+        }
+
+        log(
+          `Matched by title+year: "${title}"` +
+            ` (${mi.publication_year ?? "?"}) -> ${item.key}`,
+        );
+        return item;
+      }
+    } catch (err) {
+      log(`Title+year search failed for "${title}": ${err}`);
     }
 
     return null;

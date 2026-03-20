@@ -34,6 +34,16 @@ export function getDeleteQueue(): Array<{
   }
 }
 
-export function clearDeleteQueue(): void {
-  setPref("deleteQueue", "[]");
+/**
+ * Flag to suppress Notifier delete-queue entries during sync-initiated
+ * trashes (tombstone processing).  The sync engine sets this to true
+ * before trashing items that were deleted on the server, preventing
+ * the Notifier from queueing redundant delete entries.
+ */
+let _suppressDeleteNotifier = false;
+export function setSuppressDeleteNotifier(v: boolean): void {
+  _suppressDeleteNotifier = v;
+}
+export function isSuppressDeleteNotifier(): boolean {
+  return _suppressDeleteNotifier;
 }

@@ -12,8 +12,8 @@ export function normalizeDoi(doi: string | null | undefined): string {
   if (!doi) return "";
   return doi
     .trim()
-    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
-    .replace(/^doi:\s*/i, "");
+    .replace(/^doi:\s*/i, "")
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
 }
 
 // miscite work_type -> Zotero itemType
