@@ -1,4 +1,3 @@
-pref("serverUrl", "https://miscite.review");
 pref("apiToken", "");
 pref("autoSyncInterval", 15);
 pref("autoSyncEnabled", false);

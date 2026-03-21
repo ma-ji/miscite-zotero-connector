@@ -7,7 +7,6 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "serverUrl": string;
       "apiToken": string;
       "autoSyncInterval": number;
       "autoSyncEnabled": boolean;

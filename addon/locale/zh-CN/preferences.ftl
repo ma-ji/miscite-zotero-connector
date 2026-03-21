@@ -1,5 +1,4 @@
 pref-title = miscite 连接器设置
-pref-server-url = 服务器地址
 pref-api-token = API 密钥
 pref-test-connection =
     .label = 测试连接

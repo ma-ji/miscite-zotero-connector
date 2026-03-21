@@ -52,11 +52,10 @@ export interface ApiEnvelope<T> {
 }
 
 export class MisciteApiClient {
-  private baseUrl: string;
+  private readonly baseUrl = "https://miscite.review";
   private token: string;
 
   constructor() {
-    this.baseUrl = ((getPref("serverUrl") as string) || "").replace(/\/+$/, "");
     this.token = (getPref("apiToken") as string) || "";
   }
 

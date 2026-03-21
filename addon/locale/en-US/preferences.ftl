@@ -1,5 +1,4 @@
 pref-title = miscite Connector Settings
-pref-server-url = Server URL
 pref-api-token = API Token
 pref-test-connection =
     .label = Test Connection
