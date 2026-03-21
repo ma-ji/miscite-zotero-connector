@@ -57,7 +57,7 @@ async function _getLocalAttachments(
     if (!att || !att.isAttachment()) continue;
 
     let filename = "";
-    let fp: string | null = null;
+    let fp: string | null;
     let hash: string | null = null;
     try {
       fp = (await att.getFilePathAsync()) || null;
