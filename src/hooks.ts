@@ -185,7 +185,7 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
       registerPrefsScripts(data.window);
       break;
     case "sync":
-      await _triggerSync();
+      await _triggerSync({ forceNotify: true });
       break;
     case "fullSync":
       await _resetAndSync();
@@ -231,10 +231,12 @@ async function _resetAndSync(): Promise<void> {
   setPref("collectionKeyMap", "{}");
   setPref("fileKeyMap", "{}");
   setPref("deleteQueue", "[]");
-  await _triggerSync();
+  await _triggerSync({ forceNotify: true });
 }
 
-async function _triggerSync(): Promise<void> {
+async function _triggerSync(
+  opts: { forceNotify?: boolean } = {},
+): Promise<void> {
   if (!syncEngine) return;
   if (syncInProgress) {
     ztoolkit.log("Sync already in progress, skipping.");
@@ -250,22 +252,25 @@ async function _triggerSync(): Promise<void> {
         `${result.updated} updated, ` +
         `${result.deleted} deleted`,
     );
-    const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
-      closeOnClick: true,
-    });
-    progressWin
-      .createLine({
-        text: getString("sync-complete", {
-          args: {
-            created: result.created,
-            updated: result.updated,
-            deleted: result.deleted,
-          },
-        }),
-        type: "default",
-      })
-      .show();
-    progressWin.startCloseTimer(4000);
+    const notify = opts.forceNotify || getPref("showSyncNotifications");
+    if (notify) {
+      const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
+        closeOnClick: true,
+      });
+      progressWin
+        .createLine({
+          text: getString("sync-complete", {
+            args: {
+              created: result.created,
+              updated: result.updated,
+              deleted: result.deleted,
+            },
+          }),
+          type: "default",
+        })
+        .show();
+      progressWin.startCloseTimer(4000);
+    }
   } catch (err: any) {
     Zotero.logError(err instanceof Error ? err : new Error(String(err)));
 
@@ -284,18 +289,21 @@ async function _triggerSync(): Promise<void> {
       }
     }
 
-    const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
-      closeOnClick: true,
-    });
-    progressWin
-      .createLine({
-        text: getString("sync-failed", {
-          args: { error: String(err) },
-        }),
-        type: "default",
-      })
-      .show();
-    progressWin.startCloseTimer(6000);
+    const notify = opts.forceNotify || getPref("showSyncNotifications");
+    if (notify) {
+      const progressWin = new ztoolkit.ProgressWindow(config.addonName, {
+        closeOnClick: true,
+      });
+      progressWin
+        .createLine({
+          text: getString("sync-failed", {
+            args: { error: String(err) },
+          }),
+          type: "default",
+        })
+        .show();
+      progressWin.startCloseTimer(6000);
+    }
   } finally {
     syncInProgress = false;
   }

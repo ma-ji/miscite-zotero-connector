@@ -7,3 +7,4 @@ pref("itemKeyMap", "{}");
 pref("collectionKeyMap", "{}");
 pref("fileKeyMap", "{}");
 pref("deleteQueue", "[]");
+pref("showSyncNotifications", true);

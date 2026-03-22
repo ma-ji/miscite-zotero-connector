@@ -391,9 +391,12 @@ export class SyncEngine {
               const zoteroDate = new Date(zItem.dateModified);
               if (serverDate > zoteroDate) {
                 await this._updateZoteroItem(zItem, mi);
-                await pullFiles(api, mi.id, zItem, libraryID);
                 updated++;
               }
+              // Always pull files — server may have new files (e.g.
+              // auto-downloaded PDFs) without updating item metadata.
+              // pullFiles deduplicates via fileKeyMap + SHA256.
+              await pullFiles(api, mi.id, zItem, libraryID);
             }
           } else {
             // Check for existing duplicate by DOI or title
@@ -418,6 +421,9 @@ export class SyncEngine {
                   await rootCol.saveTx();
                 }
               }
+
+              // Pull server files for the linked item
+              await pullFiles(api, mi.id, existing, libraryID);
             } else {
               // Create new Zotero item
               const zItem = await this._createZoteroItem(mi, libraryID);

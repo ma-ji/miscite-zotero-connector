@@ -16,6 +16,7 @@ declare namespace _ZoteroTypes {
       "collectionKeyMap": string;
       "fileKeyMap": string;
       "deleteQueue": string;
+      "showSyncNotifications": boolean;
     };
   }
 }
