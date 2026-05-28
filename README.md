@@ -7,10 +7,10 @@ A Zotero plugin (7 & 8) that provides bidirectional synchronization between [mis
 - **Two-way sync** — pull items from miscite into Zotero and push local changes back
 - **File attachments** — download files from miscite; upload Zotero attachments back
 - **DOI deduplication** — existing Zotero items with matching DOIs are linked, not duplicated
-- **Collection sync** — miscite folders become subcollections under a "miscite.review" root collection
+- **Collection sync** — miscite folders become nested subcollections under a "miscite.review" root collection
 - **Incremental sync** — only transfers changes since the last sync
 - **Auto-sync** — configurable interval (5, 15, 30, or 60 minutes)
-- **Delete propagation** — items deleted in Zotero are deleted on the server
+- **Delete propagation** — items, user collections, and files deleted in Zotero are deleted on the server
 - **Citation metrics** — citation count and FWCI stored in Zotero's Extra field
 - **Localization** — English and Chinese (zh-CN)
 
@@ -26,10 +26,11 @@ A Zotero plugin (7 & 8) that provides bidirectional synchronization between [mis
 ## Setup
 
 1. Go to **Zotero → Settings → Miscite Connector**
-2. Enter your miscite server URL (default: `https://miscite.review`)
-3. Enter your API token (generate one from your miscite account settings)
-4. Click **Test Connection** to verify
-5. Optionally enable auto-sync and set the interval
+2. Enter your API token (generate one from your miscite account settings)
+3. Click **Test Connection** to verify
+4. Optionally enable auto-sync and set the interval
+
+The connector syncs with `https://miscite.review`; the server URL is fixed in the extension and is not a user preference.
 
 ## Usage
 
@@ -44,10 +45,12 @@ All synced items live in a **"miscite.review"** collection in your personal Zote
 
 ### How sync works
 
-1. **Pull collections** — miscite folders become subcollections under "miscite.review"
-2. **Pull items** — new items from miscite are created in Zotero; existing items (matched by DOI) are linked without duplication
-3. **Push items** — items in the "miscite.review" collection that were modified locally are pushed back to miscite
-4. **Process deletes** — items deleted from the "miscite.review" collection in Zotero are deleted on the server
+1. **Pull collections** — miscite folder paths become nested subcollections under "miscite.review"
+2. **Pull items** — new items from miscite are created in Zotero; existing items across the whole Zotero library are linked by DOI without duplication
+3. **Push local changes** — newer Zotero items, nested collection paths, and attachments are pushed back to miscite
+4. **Process deletes** — local item, file, and user-created collection deletes are propagated to the server; system collections are preserved
+
+When the same item changes on both sides, the newer `updated_at` / Zotero modified timestamp wins. The protected system collections are `Unfiled`, `Readlist`, and `Own publications`.
 
 ### Item type mapping
 
@@ -77,7 +80,7 @@ Citation count and FWCI (Field-Weighted Citation Impact) from miscite are stored
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 20
+- [Node.js](https://nodejs.org/) >= 22.22.3 (use `nvm use` against `.nvmrc`, or rely on the local build-time `node` devDependency which puts Node 22 on `node_modules/.bin` for `npm run` scripts even when the system `node` is older)
 - [Zotero 7](https://www.zotero.org/)
 
 ### Getting started

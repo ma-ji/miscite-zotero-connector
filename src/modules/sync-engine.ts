@@ -1,7 +1,11 @@
 /**
  * Core sync engine: pull from miscite, push from Zotero, handle deletes.
  */
-import { MisciteApiClient, type MisciteItem } from "./miscite-api";
+import {
+  MisciteApiClient,
+  type MisciteCollection,
+  type MisciteItem,
+} from "./miscite-api";
 import {
   misciteToZoteroData,
   zoteroToMisciteData,
@@ -18,6 +22,12 @@ import {
   setSuppressDeleteNotifier,
 } from "./sync-state";
 import { log } from "./utils";
+
+const SYSTEM_COLLECTION_NAMES = new Set([
+  "unfiled",
+  "readlist",
+  "own publications",
+]);
 
 export interface SyncResult {
   created: number;
@@ -63,7 +73,7 @@ export class SyncEngine {
       await this._pullCollections(api, libraryID, lastSync);
 
       // Phase 1b: Push locally-created collections to miscite
-      await this._pushCollections(api, libraryID);
+      await this._pushCollections(api, libraryID, lastSync);
 
       // Phase 2: Pull items from miscite -> Zotero
       log("Phase 2: Pulling items...");
@@ -118,6 +128,13 @@ export class SyncEngine {
     const response = await api.listCollections();
     const collectionKeyMap = getKeyMap("collectionKeyMap");
     const rootColId = await getRootCollectionID();
+    const rootCol = Zotero.Collections.get(rootColId);
+    const rootKey = rootCol ? rootCol.key : false;
+    const pendingCollectionDeleteKeys = new Set(
+      getDeleteQueue()
+        .filter((entry) => entry.type === "collection")
+        .map((entry) => entry.id),
+    );
 
     log(
       `Collections: ${response.data.length} from server,` +
@@ -133,6 +150,11 @@ export class SyncEngine {
     //    names of already-mapped collections if renamed on server.
     for (const mc of response.data) {
       const mapKey = `m${mc.id}`;
+      if (pendingCollectionDeleteKeys.has(mapKey)) {
+        log(`Skipping pull for pending local collection delete ${mapKey}`);
+        continue;
+      }
+      const pathSegments = this._parseCollectionPath(mc.name);
       if (collectionKeyMap[mapKey]) {
         // Already mapped — check if the local collection still exists
         try {
@@ -143,12 +165,17 @@ export class SyncEngine {
             // Local collection was deleted — remove stale mapping so it
             // gets recreated below
             delete collectionKeyMap[mapKey];
-          } else if (col.name !== mc.name) {
-            // Name changed on server — update locally
-            const oldName = col.name;
-            col.name = mc.name;
-            await col.saveTx();
-            log(`Renamed collection ${mapKey}: "${oldName}" -> "${mc.name}"`);
+          } else {
+            const localPath = await this._getLocalCollectionPath(col);
+            const serverDate = new Date(mc.updated_at);
+            const localDate = this._getZoteroModifiedDate(col);
+            if (localPath !== mc.name && serverDate > localDate) {
+              await this._moveCollectionToPath(libraryID, col, pathSegments);
+              log(
+                `Updated collection ${mapKey}:` +
+                  ` "${localPath}" -> "${mc.name}"`,
+              );
+            }
           }
         } catch (err) {
           log(`Failed to check/rename collection ${mapKey}: ${err}`);
@@ -157,12 +184,10 @@ export class SyncEngine {
       }
 
       try {
-        const rootCol = Zotero.Collections.get(rootColId);
-        const parentKey = rootCol ? rootCol.key : false;
-        const colId = await this._ensureChildCollection(
+        const colId = await this._ensureCollectionPath(
           libraryID,
-          mc.name,
-          parentKey,
+          pathSegments,
+          rootKey,
         );
         if (colId) {
           collectionKeyMap[mapKey] = colId;
@@ -231,21 +256,57 @@ export class SyncEngine {
    */
   private async _pushCollections(
     api: MisciteApiClient,
-    _libraryID: number,
+    libraryID: number,
+    since: string,
   ): Promise<void> {
     const rootColId = await getRootCollectionID();
     const rootCol = rootColId ? Zotero.Collections.get(rootColId) : null;
     if (!rootCol) return;
 
     const collectionKeyMap = getKeyMap("collectionKeyMap");
+    const sinceDate = since ? new Date(since) : new Date(0);
+    let remoteCollections: Map<string, MisciteCollection> | null = null;
 
     // Build reverse map: local Zotero collection ID → miscite map key
     const mappedLocalIds = new Set<number>(
       Object.values(collectionKeyMap).map((v) => v as number),
     );
 
-    // Get child collections of the root
-    const childColIds: number[] = rootCol.getChildCollections(true);
+    // Push local renames/moves for already-mapped collections when the
+    // local nested path is newer than the last successful sync.
+    for (const [mapKey, localId] of Object.entries(collectionKeyMap)) {
+      if (!mapKey.startsWith("m")) continue;
+      const col = Zotero.Collections.get(localId as number);
+      if (!col || (col as any).deleted) continue;
+
+      const localDate = this._getZoteroModifiedDate(col);
+      if (localDate <= sinceDate) continue;
+
+      const localPath = await this._getLocalCollectionPath(col);
+      if (!localPath || this._isSystemCollectionPath(localPath)) continue;
+
+      if (!remoteCollections) {
+        const response = await api.listCollections();
+        remoteCollections = new Map(
+          response.data.map((mc) => [`m${mc.id}`, mc]),
+        );
+      }
+      const remote = remoteCollections.get(mapKey);
+      if (!remote || remote.name === localPath) continue;
+
+      try {
+        const misciteId = parseInt(mapKey.slice(1), 10);
+        await api.updateCollection(misciteId, { name: localPath });
+        log(`Pushed collection path "${localPath}" -> ${mapKey}`);
+      } catch (err) {
+        log(`Failed to update collection ${mapKey}: ${err}`);
+      }
+    }
+
+    // Get descendant collections of the root
+    const childColIds = rootCol
+      .getDescendents(false, "collection")
+      .map((desc) => desc.id);
     let pushed = 0;
 
     for (const colId of childColIds) {
@@ -254,11 +315,14 @@ export class SyncEngine {
       if (!col || (col as any).deleted) continue;
 
       try {
-        const response = await api.createCollection(col.name);
+        const localPath = await this._getLocalCollectionPath(col);
+        if (!localPath || this._isSystemCollectionPath(localPath)) continue;
+
+        const response = await api.createCollection(localPath);
         const newCol = response.data;
         collectionKeyMap[`m${newCol.id}`] = colId;
         pushed++;
-        log(`Pushed new collection "${col.name}" -> m${newCol.id}`);
+        log(`Pushed new collection "${localPath}" -> m${newCol.id}`);
       } catch (err) {
         log(`Failed to push collection "${col.name}": ${err}`);
       }
@@ -270,6 +334,85 @@ export class SyncEngine {
       this._managedColIds = null;
       this._reverseColMap = null;
     }
+  }
+
+  private _parseCollectionPath(path: string): string[] {
+    const parts = path
+      .split("/")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts : [path.trim()];
+  }
+
+  private _isSystemCollectionPath(path: string): boolean {
+    return SYSTEM_COLLECTION_NAMES.has(path.trim().toLowerCase());
+  }
+
+  private _getZoteroModifiedDate(obj: unknown): Date {
+    const raw = (obj as { dateModified?: string }).dateModified;
+    const parsed = raw ? new Date(raw) : new Date(0);
+    return isNaN(parsed.getTime()) ? new Date(0) : parsed;
+  }
+
+  private async _ensureCollectionPath(
+    libraryID: number,
+    segments: string[],
+    rootKey: string | false,
+  ): Promise<number> {
+    let parentKey = rootKey;
+    let colId = 0;
+    for (const segment of segments) {
+      colId = await this._ensureChildCollection(libraryID, segment, parentKey);
+      const col = Zotero.Collections.get(colId);
+      parentKey = col ? col.key : false;
+    }
+    return colId;
+  }
+
+  private async _moveCollectionToPath(
+    libraryID: number,
+    col: Zotero.Collection,
+    segments: string[],
+  ): Promise<void> {
+    const rootColId = await getRootCollectionID();
+    const rootCol = Zotero.Collections.get(rootColId);
+    let parentKey: string | false = rootCol ? rootCol.key : false;
+    const parentSegments = segments.slice(0, -1);
+    for (const segment of parentSegments) {
+      const parentId = await this._ensureChildCollection(
+        libraryID,
+        segment,
+        parentKey,
+      );
+      const parent = Zotero.Collections.get(parentId);
+      parentKey = parent ? parent.key : false;
+    }
+
+    const leafName = segments[segments.length - 1] || col.name;
+    col.name = leafName;
+    (col as any).parentKey = parentKey || false;
+    await col.saveTx();
+  }
+
+  private async _getLocalCollectionPath(
+    col: Zotero.Collection,
+  ): Promise<string> {
+    const rootColId = await getRootCollectionID();
+    const rootCol = Zotero.Collections.get(rootColId);
+    if (!rootCol) return col.name;
+
+    const segments: string[] = [col.name];
+    let parentKey = col.parentKey;
+    while (parentKey && parentKey !== rootCol.key) {
+      const parent = Zotero.Collections.getByLibraryAndKey(
+        rootCol.libraryID,
+        parentKey,
+      );
+      if (!parent || (parent as any).deleted) break;
+      segments.unshift(parent.name);
+      parentKey = parent.parentKey;
+    }
+    return segments.join(" / ");
   }
 
   private async _ensureChildCollection(
@@ -354,6 +497,8 @@ export class SyncEngine {
     let hasMore = true;
     let offset = 0;
     const itemKeyMap = getKeyMap("itemKeyMap");
+    const claimedKeys = new Set<string>();
+    const serverWonItemMapKeys = new Set<string>();
     let deletedItemIds: number[] = [];
 
     while (hasMore) {
@@ -377,7 +522,7 @@ export class SyncEngine {
 
           if (existingKey) {
             // Update existing Zotero item
-            pulledKeys.add(existingKey);
+            claimedKeys.add(existingKey);
             const zItem = Zotero.Items.getByLibraryAndKey(
               libraryID,
               existingKey,
@@ -392,6 +537,8 @@ export class SyncEngine {
               if (serverDate > zoteroDate) {
                 await this._updateZoteroItem(zItem, mi);
                 updated++;
+                pulledKeys.add(existingKey);
+                serverWonItemMapKeys.add(mapKey);
               }
               // Always pull files — server may have new files (e.g.
               // auto-downloaded PDFs) without updating item metadata.
@@ -401,16 +548,25 @@ export class SyncEngine {
           } else {
             // Check for existing duplicate by DOI or title
             const existing = await this._findExistingItem(mi, libraryID);
-            if (existing && !pulledKeys.has(existing.key)) {
+            if (existing && !claimedKeys.has(existing.key)) {
               // Link to the existing item instead of creating a duplicate.
-              // The pulledKeys guard prevents two server items with the
+              // The claimedKeys guard prevents two server items with the
               // same title+year from both mapping to the same local item.
               itemKeyMap[mapKey] = existing.key;
-              pulledKeys.add(existing.key);
+              claimedKeys.add(existing.key);
               log(
                 `Linked miscite item ${mi.id} to existing` +
                   ` Zotero item "${mi.title}" (${existing.key})`,
               );
+
+              const serverDate = new Date(mi.updated_at);
+              const zoteroDate = new Date(existing.dateModified);
+              if (serverDate > zoteroDate) {
+                await this._updateZoteroItem(existing, mi);
+                updated++;
+                pulledKeys.add(existing.key);
+                serverWonItemMapKeys.add(mapKey);
+              }
 
               // Add to miscite root collection if not already there
               const rootColId = await getRootCollectionID();
@@ -429,7 +585,9 @@ export class SyncEngine {
               const zItem = await this._createZoteroItem(mi, libraryID);
               if (zItem) {
                 itemKeyMap[mapKey] = zItem.key;
+                claimedKeys.add(zItem.key);
                 pulledKeys.add(zItem.key);
+                serverWonItemMapKeys.add(mapKey);
                 created++;
 
                 // Sync files for new item
@@ -440,7 +598,7 @@ export class SyncEngine {
 
           // Sync collection memberships (skip if item wasn't mapped)
           const mappedKey = itemKeyMap[mapKey] as string | undefined;
-          if (mappedKey) {
+          if (mappedKey && serverWonItemMapKeys.has(mapKey)) {
             await this._syncItemCollections(mi, mappedKey, libraryID);
           }
         } catch (err) {
@@ -615,8 +773,11 @@ export class SyncEngine {
     if (deleteQueue.length === 0) return 0;
 
     const itemKeyMap = getKeyMap("itemKeyMap");
+    const fileKeyMap = getKeyMap("fileKeyMap");
+    const collectionKeyMap = getKeyMap("collectionKeyMap");
     let deleted = 0;
     const failedEntries: typeof deleteQueue = [];
+    let remoteCollections: Map<string, MisciteCollection> | null = null;
 
     for (const entry of deleteQueue) {
       try {
@@ -630,16 +791,28 @@ export class SyncEngine {
           await api.deleteItem(misciteId);
           delete itemKeyMap[mapKey];
           deleted++;
+        } else if (entry.type === "file") {
+          await api.deleteFile(misciteId);
+          delete fileKeyMap[mapKey];
+          deleted++;
         } else if (entry.type === "collection") {
-          // Don't delete collections from server — they are server-managed.
-          // Just clear the local mapping so the next sync re-pulls them.
-          const collectionKeyMap = getKeyMap("collectionKeyMap");
+          if (!remoteCollections) {
+            const response = await api.listCollections();
+            remoteCollections = new Map(
+              response.data.map((mc) => [`m${mc.id}`, mc]),
+            );
+          }
+          const remote = remoteCollections.get(mapKey);
+          // The server is the source of truth on system status — name-based
+          // fallback would incorrectly protect user-owned collections that
+          // happen to share a reserved name.
+          if (remote?.is_system) {
+            log(`Skipped server delete for system collection ${mapKey}`);
+          } else {
+            await api.deleteCollection(misciteId);
+            deleted++;
+          }
           delete collectionKeyMap[mapKey];
-          setKeyMap("collectionKeyMap", collectionKeyMap);
-          log(
-            `Cleared local mapping for collection ${mapKey}` +
-              ` (server copy preserved)`,
-          );
         }
       } catch (err: any) {
         // Treat 404 as success — the item/collection is already gone
@@ -647,6 +820,10 @@ export class SyncEngine {
         if (status === 404) {
           if (entry.type === "item") {
             delete itemKeyMap[entry.id];
+          } else if (entry.type === "file") {
+            delete fileKeyMap[entry.id];
+          } else if (entry.type === "collection") {
+            delete collectionKeyMap[entry.id];
           }
           deleted++;
           log(`Delete ${entry.type} ${entry.id}: already gone (404)`);
@@ -658,13 +835,17 @@ export class SyncEngine {
     }
 
     setKeyMap("itemKeyMap", itemKeyMap);
+    setKeyMap("fileKeyMap", fileKeyMap);
+    setKeyMap("collectionKeyMap", collectionKeyMap);
     // Replace the queue with failed entries + any entries the Notifier
     // added while we were processing (between getDeleteQueue and now).
     // This avoids the race where clearing the entire queue would wipe
     // entries that the Notifier wrote during our async processing.
-    const processedIds = new Set(deleteQueue.map((e) => e.id));
+    const processedIds = new Set(deleteQueue.map((e) => `${e.type}:${e.id}`));
     const currentQueue = getDeleteQueue();
-    const surviving = currentQueue.filter((e) => !processedIds.has(e.id));
+    const surviving = currentQueue.filter(
+      (e) => !processedIds.has(`${e.type}:${e.id}`),
+    );
     const merged = [...failedEntries, ...surviving];
     setPref("deleteQueue", JSON.stringify(merged));
     return deleted;

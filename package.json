@@ -1,7 +1,7 @@
 {
   "name": "miscite-zotero-connector",
   "type": "module",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Two-way sync between miscite and Zotero",
   "author": "miscite",
   "homepage": "https://github.com/ma-ji/miscite-zotero-connector#readme",
@@ -12,6 +12,10 @@
   },
   "bugs": {
     "url": "https://github.com/ma-ji/miscite-zotero-connector/issues"
+  },
+  "engines": {
+    "node": ">=22.22.3",
+    "npm": ">=9"
   },
   "config": {
     "addonName": "Miscite Connector",
@@ -35,6 +39,7 @@
   "devDependencies": {
     "@zotero-plugin/eslint-config": "^0.6.7",
     "eslint": "^10.0.3",
+    "node": "^22.22.3",
     "prettier": "^3.7.4",
     "typescript": "^5.9.3",
     "zotero-plugin-scaffold": "^0.8.2",

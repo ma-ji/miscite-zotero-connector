@@ -47,25 +47,44 @@ async function onStartup() {
           // For delete: extraData contains {[id]: {key}} for deleted items.
           // For trash: item still exists in DB, look up key directly.
           // For collections: Zotero passes numeric IDs which match our map values.
-          const keyMap = JSON.parse(
-            (getPref(
-              type === "item" ? "itemKeyMap" : "collectionKeyMap",
-            ) as string) || "{}",
-          );
           const deleteQueue = JSON.parse(
             (getPref("deleteQueue") as string) || "[]",
           );
+          const queued = new Set(
+            deleteQueue.map((entry: { type: string; id: string }) => {
+              return `${entry.type}:${entry.id}`;
+            }),
+          );
+
           // Build reverse: value -> miscite map key
-          const reverseByValue: Record<string, string> = {};
-          for (const [mk, v] of Object.entries(keyMap)) {
-            reverseByValue[String(v)] = mk;
-          }
+          const reverseMap = (
+            prefName: "itemKeyMap" | "collectionKeyMap" | "fileKeyMap",
+          ): Record<string, string> => {
+            const keyMap = JSON.parse((getPref(prefName) as string) || "{}");
+            const reverseByValue: Record<string, string> = {};
+            for (const [mk, v] of Object.entries(keyMap)) {
+              reverseByValue[String(v)] = mk;
+            }
+            return reverseByValue;
+          };
 
           let changed = false;
+          const enqueue = (queueType: string, matchKey: string): void => {
+            const queueKey = `${queueType}:${matchKey}`;
+            if (queued.has(queueKey)) return;
+            deleteQueue.push({
+              type: queueType,
+              id: matchKey,
+              ts: Date.now(),
+            });
+            queued.add(queueKey);
+            changed = true;
+          };
+
           for (const id of ids) {
-            let matchKey: string | undefined;
             if (type === "item") {
               let zoteroKey: string | undefined;
+              let isAttachment = false;
               if (event === "delete") {
                 // Notifier gives numeric ID; extraData has the Zotero key
                 const extra = _extraData[String(id)] as
@@ -77,25 +96,26 @@ async function onStartup() {
                 try {
                   const zItem = Zotero.Items.get(id as number);
                   zoteroKey = zItem?.key;
+                  isAttachment = !!zItem?.isAttachment();
                 } catch {
                   // Item lookup failed
                 }
               }
               if (zoteroKey) {
-                matchKey = reverseByValue[zoteroKey];
+                const fileMatch = reverseMap("fileKeyMap")[zoteroKey];
+                const itemMatch = reverseMap("itemKeyMap")[zoteroKey];
+                if (fileMatch && (isAttachment || !itemMatch)) {
+                  enqueue("file", fileMatch);
+                } else if (itemMatch) {
+                  enqueue("item", itemMatch);
+                } else if (fileMatch) {
+                  enqueue("file", fileMatch);
+                }
               }
             } else {
               // Collection: numeric ID matches our map values directly
-              matchKey = reverseByValue[String(id)];
-            }
-            if (matchKey) {
-              deleteQueue.push({
-                type,
-                // Store the miscite map key (e.g. "m123") for _processDeletes
-                id: matchKey,
-                ts: Date.now(),
-              });
-              changed = true;
+              const matchKey = reverseMap("collectionKeyMap")[String(id)];
+              if (matchKey) enqueue("collection", matchKey);
             }
           }
           if (changed) {

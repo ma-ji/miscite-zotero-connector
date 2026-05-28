@@ -10,7 +10,7 @@
  *   net, but avoiding the upload entirely saves bandwidth.
  */
 import type { MisciteApiClient, MisciteFile } from "./miscite-api";
-import { getKeyMap, setKeyMap } from "./sync-state";
+import { getKeyMap, setKeyMap, setSuppressDeleteNotifier } from "./sync-state";
 import { log } from "./utils";
 
 /**
@@ -103,20 +103,31 @@ export async function pullFiles(
   // server, its map key still exists in fileKeyMap pointing to a local
   // attachment.  Remove these so pushFiles won't skip the local file.
   const remoteIdSet = new Set(remoteFiles.map((rf) => `m${rf.id}`));
-  const itemAttKeys = new Set(
-    zoteroItem
-      .getAttachments()
-      .map((id: number) => Zotero.Items.get(id)?.key)
-      .filter(Boolean),
-  );
-  for (const mk of Object.keys(fileKeyMap)) {
-    if (!mk.startsWith("m")) continue;
-    // Only clean entries whose local attachment belongs to this item
-    const localKey = fileKeyMap[mk] as string;
-    if (itemAttKeys.has(localKey) && !remoteIdSet.has(mk)) {
-      log(`Clearing stale file mapping ${mk} (server file removed)`);
-      delete fileKeyMap[mk];
+  const itemAttachments = new Map<string, Zotero.Item>();
+  for (const id of zoteroItem.getAttachments()) {
+    const att = Zotero.Items.get(id);
+    if (att?.key) itemAttachments.set(att.key, att);
+  }
+  setSuppressDeleteNotifier(true);
+  try {
+    for (const mk of Object.keys(fileKeyMap)) {
+      if (!mk.startsWith("m")) continue;
+      // Only clean entries whose local attachment belongs to this item
+      const localKey = fileKeyMap[mk] as string;
+      const localAttachment = itemAttachments.get(localKey);
+      if (localAttachment && !remoteIdSet.has(mk)) {
+        if (!localAttachment.deleted) {
+          await Zotero.Items.trashTx(localAttachment.id);
+          log(
+            `Trashed local attachment ${localKey}` +
+              ` (server file ${mk} was removed)`,
+          );
+        }
+        delete fileKeyMap[mk];
+      }
     }
+  } finally {
+    setSuppressDeleteNotifier(false);
   }
 
   // Build local attachment index for dedup

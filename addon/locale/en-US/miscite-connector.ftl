@@ -3,7 +3,6 @@ miscite-sync-button =
     .tooltiptext = Synchronize library with miscite
 
 miscite-pref-title = Miscite Connector Settings
-miscite-pref-server-url = Server URL
 miscite-pref-api-token = API Token
 miscite-pref-test-connection = Test Connection
 miscite-pref-auto-sync = Auto-sync
