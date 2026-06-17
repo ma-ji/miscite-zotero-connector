@@ -1,6 +1,6 @@
 # Miscite Connector for Zotero
 
-A Zotero plugin (7 & 8) that provides bidirectional synchronization between [miscite.review](https://miscite.review) and your Zotero library.
+A Zotero plugin (7, 8 & 9) that provides bidirectional synchronization between [miscite.review](https://miscite.review) and your Zotero library.
 
 ## Features
 
@@ -16,7 +16,7 @@ A Zotero plugin (7 & 8) that provides bidirectional synchronization between [mis
 
 ## Installation
 
-**Requirements:** Zotero 7 or 8 and a [miscite.review](https://miscite.review) account.
+**Requirements:** Zotero 7, 8, or 9 and a [miscite.review](https://miscite.review) account.
 
 1. Download the latest `.xpi` file from [Releases](https://github.com/ma-ji/miscite-zotero-connector/releases)
 2. In Zotero, go to **Tools → Add-ons**
@@ -81,7 +81,7 @@ Citation count and FWCI (Field-Weighted Citation Impact) from miscite are stored
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 22.22.3 (use `nvm use` against `.nvmrc`, or rely on the local build-time `node` devDependency which puts Node 22 on `node_modules/.bin` for `npm run` scripts even when the system `node` is older)
-- [Zotero 7](https://www.zotero.org/)
+- [Zotero 7, 8, or 9](https://www.zotero.org/)
 
 ### Getting started
 
