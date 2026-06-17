@@ -985,7 +985,8 @@ export class SyncEngine {
 
     for (const [field, value] of Object.entries(data)) {
       if (field === "itemType" || field === "creators") continue;
-      // Preserve user content in the Extra field — merge rather than replace
+      // Preserve user content in the Extra field — merge rather than replace.
+      // Citation metrics are server-authored and always refreshed here.
       if (field === "extra" && value) {
         const existing = (zItem.getField("extra") as string) || "";
         const merged = this._mergeExtraField(existing, value as string);
@@ -996,6 +997,10 @@ export class SyncEngine {
         }
         continue;
       }
+      // Non-destructive merge: never blank a populated local field with an
+      // empty server value. The server only overwrites a field when it
+      // actually carries a value (and is the newer record, per the pull gate).
+      if (value === undefined || value === null || value === "") continue;
       try {
         zItem.setField(field, value as string);
       } catch {
@@ -1003,7 +1008,9 @@ export class SyncEngine {
       }
     }
 
-    if (Array.isArray(data.creators)) {
+    // Only overwrite creators when the server actually has authors, so an
+    // authorless miscite record never wipes locally-entered Zotero authors.
+    if (Array.isArray(data.creators) && data.creators.length > 0) {
       zItem.setCreators(
         data.creators as Parameters<Zotero.Item["setCreators"]>[0],
       );

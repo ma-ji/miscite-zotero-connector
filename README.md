@@ -50,7 +50,7 @@ All synced items live in a **"miscite.review"** collection in your personal Zote
 3. **Push local changes** — newer Zotero items, nested collection paths, and attachments are pushed back to miscite
 4. **Process deletes** — local item, file, and user-created collection deletes are propagated to the server; system collections are preserved
 
-When the same item changes on both sides, the newer `updated_at` / Zotero modified timestamp wins. The protected system collections are `Unfiled`, `Readlist`, and `Own publications`.
+When the same item changes on both sides, the newer `updated_at` / Zotero modified timestamp wins. The merge is **non-destructive**: an empty field on one side never blanks a populated field on the other, so a record missing (for example) author info will not wipe authors that already exist on the other side. Server-sourced citation metrics are still refreshed in the Extra field. The protected system collections are `Unfiled`, `Readlist`, and `Own publications`.
 
 ### Item type mapping
 
