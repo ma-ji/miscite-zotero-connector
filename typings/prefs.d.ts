@@ -12,6 +12,7 @@ declare namespace _ZoteroTypes {
       "autoSyncEnabled": boolean;
       "rootCollectionId": number;
       "lastSyncTime": string;
+      "pushWatermark": string;
       "itemKeyMap": string;
       "collectionKeyMap": string;
       "fileKeyMap": string;

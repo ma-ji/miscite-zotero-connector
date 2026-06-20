@@ -3,6 +3,7 @@ pref("autoSyncInterval", 15);
 pref("autoSyncEnabled", false);
 pref("rootCollectionId", 0);
 pref("lastSyncTime", "");
+pref("pushWatermark", "");
 pref("itemKeyMap", "{}");
 pref("collectionKeyMap", "{}");
 pref("fileKeyMap", "{}");

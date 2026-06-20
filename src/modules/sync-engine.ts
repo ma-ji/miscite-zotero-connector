@@ -29,6 +29,12 @@ const SYSTEM_COLLECTION_NAMES = new Set([
   "own publications",
 ]);
 
+// Canonical separator for nested collection paths. Nesting is expressed by
+// " / " (space-slash-space); a literal "/" inside a single segment is
+// preserved. Must stay symmetric with `_getLocalCollectionPath`'s join and
+// match the server's hierarchy split.
+const COLLECTION_PATH_SEPARATOR = " / ";
+
 export interface SyncResult {
   created: number;
   updated: number;
@@ -59,6 +65,12 @@ export class SyncEngine {
 
     const lastSync = (getPref("lastSyncTime") as string) || "";
     log(`Last sync: ${lastSync || "(first sync)"}`);
+
+    // Client-local watermark for the push gate. lastSyncTime is the SERVER
+    // clock (used for the pull cursor); comparing local dateModified against
+    // it would miss/re-push items under clock skew. Capture our own clock
+    // BEFORE any work and persist it only after a fully successful sync.
+    const cycleStart = new Date();
 
     const result: SyncResult = {
       created: 0,
@@ -105,10 +117,12 @@ export class SyncEngine {
       result.deleted += deleteResult;
       log(`Deletes: ${deleteResult}`);
 
-      // Save server time from pull response
+      // Save server time from pull response (drives the pull cursor only)
       if (pullResult.serverTime) {
         setPref("lastSyncTime", pullResult.serverTime);
       }
+      // Persist the client-local push watermark only on full success.
+      setPref("pushWatermark", cycleStart.toISOString());
     } catch (err) {
       result.errors++;
       throw err;
@@ -338,7 +352,7 @@ export class SyncEngine {
 
   private _parseCollectionPath(path: string): string[] {
     const parts = path
-      .split("/")
+      .split(COLLECTION_PATH_SEPARATOR)
       .map((part) => part.trim())
       .filter(Boolean);
     return parts.length > 0 ? parts : [path.trim()];
@@ -412,7 +426,7 @@ export class SyncEngine {
       segments.unshift(parent.name);
       parentKey = parent.parentKey;
     }
-    return segments.join(" / ");
+    return segments.join(COLLECTION_PATH_SEPARATOR);
   }
 
   private async _ensureChildCollection(
@@ -495,24 +509,25 @@ export class SyncEngine {
     const pulledKeys = new Set<string>();
     let serverTime = "";
     let hasMore = true;
-    let offset = 0;
+    let cursor: string | undefined = undefined;
+    let firstPage = true;
     const itemKeyMap = getKeyMap("itemKeyMap");
     const claimedKeys = new Set<string>();
-    const serverWonItemMapKeys = new Set<string>();
     let deletedItemIds: number[] = [];
 
     while (hasMore) {
       const sinceParam = since || undefined;
-      const response = await api.listItems(sinceParam, offset);
+      const response = await api.listItems(sinceParam, cursor);
       hasMore = response.has_more;
       if (response.server_time) serverTime = response.server_time;
-      // Capture tombstone IDs from the first page
-      if (offset === 0 && response.deleted_ids?.length) {
+      // Capture tombstone IDs from the first page only (the server returns
+      // deleted_ids exclusively when no cursor has been supplied yet).
+      if (firstPage && response.deleted_ids?.length) {
         deletedItemIds = response.deleted_ids;
       }
       log(
         `API returned ${response.data.length} items` +
-          ` (offset=${offset}, has_more=${hasMore})`,
+          ` (cursor=${cursor ?? "(none)"}, has_more=${hasMore})`,
       );
 
       for (const mi of response.data) {
@@ -538,7 +553,6 @@ export class SyncEngine {
                 await this._updateZoteroItem(zItem, mi);
                 updated++;
                 pulledKeys.add(existingKey);
-                serverWonItemMapKeys.add(mapKey);
               }
               // Always pull files — server may have new files (e.g.
               // auto-downloaded PDFs) without updating item metadata.
@@ -565,7 +579,6 @@ export class SyncEngine {
                 await this._updateZoteroItem(existing, mi);
                 updated++;
                 pulledKeys.add(existing.key);
-                serverWonItemMapKeys.add(mapKey);
               }
 
               // Add to miscite root collection if not already there
@@ -587,7 +600,6 @@ export class SyncEngine {
                 itemKeyMap[mapKey] = zItem.key;
                 claimedKeys.add(zItem.key);
                 pulledKeys.add(zItem.key);
-                serverWonItemMapKeys.add(mapKey);
                 created++;
 
                 // Sync files for new item
@@ -596,9 +608,14 @@ export class SyncEngine {
             }
           }
 
-          // Sync collection memberships (skip if item wasn't mapped)
+          // Sync collection memberships for EVERY mapped item — not just
+          // ones whose metadata the server won. Gating on serverWon caused
+          // server-side membership changes to be dropped when local metadata
+          // was newer, and the subsequent push then overwrote them. Pull runs
+          // before push and mutates local memberships, so push carries the
+          // merged set forward.
           const mappedKey = itemKeyMap[mapKey] as string | undefined;
-          if (mappedKey && serverWonItemMapKeys.has(mapKey)) {
+          if (mappedKey) {
             await this._syncItemCollections(mi, mappedKey, libraryID);
           }
         } catch (err) {
@@ -610,7 +627,9 @@ export class SyncEngine {
       // network failure during subsequent pages
       setKeyMap("itemKeyMap", itemKeyMap);
 
-      offset += response.data.length;
+      // Advance the keyset cursor for the next page.
+      cursor = response.next_cursor ?? undefined;
+      firstPage = false;
       if (!hasMore) break;
     }
 
@@ -684,7 +703,7 @@ export class SyncEngine {
   private async _pushItems(
     api: MisciteApiClient,
     libraryID: number,
-    since: string,
+    _since: string,
     skipKeys?: Set<string>,
   ): Promise<{ created: number; updated: number }> {
     let created = 0;
@@ -717,7 +736,11 @@ export class SyncEngine {
     const items = Array.from(allItemIDs)
       .map((id: number) => Zotero.Items.get(id))
       .filter(Boolean);
-    const sinceDate = since ? new Date(since) : new Date(0);
+    // Gate pushes on the CLIENT-LOCAL watermark, not the server `since`:
+    // zItem.dateModified is the local clock, so comparing it against the
+    // server clock would miss/re-push items under skew.
+    const pushWatermark = (getPref("pushWatermark") as string) || "";
+    const sinceDate = pushWatermark ? new Date(pushWatermark) : new Date(0);
 
     for (const zItem of items) {
       if (!zItem.isRegularItem()) continue;

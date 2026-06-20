@@ -247,6 +247,7 @@ function _setupAutoSync(): void {
 async function _resetAndSync(): Promise<void> {
   ztoolkit.log("Resetting sync state for full re-sync...");
   setPref("lastSyncTime", "");
+  setPref("pushWatermark", "");
   setPref("itemKeyMap", "{}");
   setPref("collectionKeyMap", "{}");
   setPref("fileKeyMap", "{}");
