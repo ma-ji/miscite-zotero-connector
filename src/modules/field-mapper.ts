@@ -221,15 +221,16 @@ export function zoteroToMisciteData(
     }
   }
 
-  // Parse metrics from extra field
+  // Parse metrics from extra field. cited_by_count/fwci are server-authored
+  // (the connector only ever displays them, round-tripped from the Extra text
+  // at reduced precision) — the server is the sole writer, so we never push
+  // them back. We still need otherLines for zotero_extra.
   const metrics = parseExtraMetrics(extra);
 
   // Build full payload preserving all Zotero fields
   const payload: Record<string, unknown> = {
     zotero_item_type: itemType,
     abstract: abstractNote || undefined,
-    cited_by_count: metrics.citedByCount,
-    fwci: metrics.fwci,
     zotero_extra: metrics.otherLines.join("\n") || undefined,
   };
 

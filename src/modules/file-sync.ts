@@ -130,13 +130,19 @@ export async function pullFiles(
     setSuppressDeleteNotifier(false);
   }
 
-  // Build local attachment index for dedup
-  const localAtts = await _getLocalAttachments(zoteroItem);
+  // Build local attachment index for dedup — but only if there is at least
+  // one remote file that is not already mapped. Hashing every local
+  // attachment on every sync is expensive; when every remote file is already
+  // in fileKeyMap there is nothing to dedup against, so skip the work.
   const localByHash = new Map<string, LocalAttachmentInfo>();
   const localByName = new Map<string, LocalAttachmentInfo>();
-  for (const la of localAtts) {
-    if (la.sha256) localByHash.set(la.sha256, la);
-    if (la.filename) localByName.set(la.filename, la);
+  const hasUnmappedRemote = remoteFiles.some((rf) => !fileKeyMap[`m${rf.id}`]);
+  if (hasUnmappedRemote) {
+    const localAtts = await _getLocalAttachments(zoteroItem);
+    for (const la of localAtts) {
+      if (la.sha256) localByHash.set(la.sha256, la);
+      if (la.filename) localByName.set(la.filename, la);
+    }
   }
 
   for (const rf of remoteFiles) {
@@ -178,14 +184,19 @@ export async function pullFiles(
     try {
       const data = await api.downloadFile(rf.id);
 
-      // Verify downloaded content matches expected hash
+      // Verify downloaded content matches expected hash. On mismatch the
+      // content is corrupt/truncated, so skip the import entirely (do NOT
+      // set fileKeyMap or the local indices) and leave the file unmapped so
+      // the next sync retries the download.
       if (rf.sha256) {
         const dlHash = sha256hex(data);
         if (dlHash !== rf.sha256) {
           log(
             `Hash mismatch for ${rf.filename}:` +
-              ` expected ${rf.sha256}, got ${dlHash}`,
+              ` expected ${rf.sha256}, got ${dlHash}` +
+              ` — skipping import, will retry next sync`,
           );
+          continue;
         }
       }
 
@@ -255,6 +266,22 @@ export async function pushFiles(
     remoteByName.set(rf.filename, rf);
   }
 
+  // Hashing every local attachment is expensive. If every local attachment
+  // is already mapped (its key is in reverseMap) there is nothing to upload
+  // and nothing to re-link, so skip _getLocalAttachments (and its hashing)
+  // entirely. We derive the local keys cheaply from getAttachments().
+  const localAttKeys: string[] = [];
+  for (const attId of zoteroItem.getAttachments()) {
+    const att = Zotero.Items.get(attId);
+    if (att?.isAttachment() && att.key) localAttKeys.push(att.key);
+  }
+  const allLocalMapped =
+    localAttKeys.length > 0 && localAttKeys.every((k) => reverseMap[k]);
+  if (allLocalMapped) {
+    setKeyMap("fileKeyMap", fileKeyMap);
+    return uploaded;
+  }
+
   // Re-establish mappings for any unlinked remote files
   const localAtts = await _getLocalAttachments(zoteroItem);
   for (const rf of remoteFiles) {
@@ -293,12 +320,27 @@ export async function pushFiles(
         continue;
       }
 
-      // 2. Dedup by filename
+      // 2. Dedup by filename — but only skip when the content is actually
+      //    the same. If a same-named remote file has a KNOWN, DIFFERENT
+      //    hash, the local attachment was edited: re-upload the new content,
+      //    then delete the now-stale remote row (the server keys dedup on
+      //    sha256, so leaving it would create a SECOND row with this name).
+      let stale: MisciteFile | null = null;
       if (remoteByName.has(la.filename)) {
         const existing = remoteByName.get(la.filename)!;
-        fileKeyMap[`m${existing.id}`] = la.key;
-        log(`Skipping upload of ${la.filename} — already on server`);
-        continue;
+        const hashesMatch =
+          !la.sha256 || !existing.sha256 || la.sha256 === existing.sha256;
+        if (hashesMatch) {
+          fileKeyMap[`m${existing.id}`] = la.key;
+          log(`Skipping upload of ${la.filename} — already on server`);
+          continue;
+        }
+        stale = existing;
+        log(
+          `Local attachment ${la.filename} differs from server` +
+            ` (server=${existing.sha256?.slice(0, 8)}…,` +
+            ` local=${la.sha256?.slice(0, 8)}…) — re-uploading`,
+        );
       }
 
       // 3. Upload
@@ -332,6 +374,26 @@ export async function pushFiles(
         remoteByName.set(la.filename, response.data);
         if (response.data.sha256) {
           remoteByHash.set(response.data.sha256, response.data);
+        }
+
+        // Remove the stale remote row that this upload supersedes.
+        if (stale && stale.id !== response.data.id) {
+          try {
+            await api.deleteFile(stale.id);
+            delete fileKeyMap[`m${stale.id}`];
+            if (
+              stale.sha256 &&
+              remoteByHash.get(stale.sha256)?.id === stale.id
+            ) {
+              remoteByHash.delete(stale.sha256);
+            }
+            log(
+              `Deleted stale remote file ${stale.filename}` +
+                ` (m${stale.id}) superseded by m${response.data.id}`,
+            );
+          } catch (delErr) {
+            log(`Failed to delete stale remote file m${stale.id}: ${delErr}`);
+          }
         }
       }
     } catch (err) {

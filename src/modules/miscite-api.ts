@@ -48,6 +48,7 @@ export interface ApiEnvelope<T> {
   data: T;
   server_time: string;
   has_more: boolean;
+  next_cursor?: string;
   deleted_ids?: number[];
 }
 
@@ -93,11 +94,11 @@ export class MisciteApiClient {
 
   async listItems(
     since?: string,
-    offset?: number,
+    cursor?: string,
   ): Promise<ApiEnvelope<MisciteItem[]>> {
     const params: string[] = [];
     if (since) params.push(`since=${encodeURIComponent(since)}`);
-    if (offset && offset > 0) params.push(`offset=${offset}`);
+    if (cursor) params.push(`cursor=${encodeURIComponent(cursor)}`);
     const qs = params.length > 0 ? `?${params.join("&")}` : "";
     return this.request("GET", `/items${qs}`);
   }
@@ -184,12 +185,18 @@ export class MisciteApiClient {
     const url = `${this.baseUrl}/api/v1/sync` + `/items/${itemId}/files`;
 
     // Build multipart form data manually since FormData
-    // is not available in the Zotero sandbox environment
+    // is not available in the Zotero sandbox environment.
+    // Sanitize the filename so a CR/LF/quote/control char can't corrupt
+    // the Content-Disposition header (which would drop the extension and
+    // cause a server 400).  The on-disk name is a server UUID, so only the
+    // extension matters; non-ASCII is fine since the body is UTF-8 encoded.
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the intent
+    const safeName = filename.replace(/[\r\n\x00-\x1f"]/g, "_");
     const boundary = `----MisciteBoundary${Date.now()}`;
     const header =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; ` +
-      `name="file"; filename="${filename}"\r\n` +
+      `name="file"; filename="${safeName}"\r\n` +
       `Content-Type: ${contentType}\r\n\r\n`;
     const footer = `\r\n--${boundary}--\r\n`;
 
